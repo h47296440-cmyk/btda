@@ -1,0 +1,6 @@
+{
+  "name": "城塞防衛バトル",
+  "description": "トップダウン2Dのお城防衛バトルゲーム。制限時間と予算内で素材や砲台、兵士を配備し、二つの丸と本陣を守り攻め落とす本格シミュレーション",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
