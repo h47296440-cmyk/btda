@@ -550,6 +550,26 @@ export default function App() {
     );
   };
 
+  // Change Stance of ALL player soldiers simultaneously
+  const handleChangeAllStances = (newStance: SoldierStance) => {
+    setSoldiers(prev =>
+      prev.map(s => (s.team === 'player' ? { ...s, stance: newStance } : s))
+    );
+    setSoldierStance(newStance);
+    sounds.playTaikoDrum();
+    const stanceName =
+      newStance === 'attack'
+        ? '全軍突撃（攻）'
+        : newStance === 'defense'
+        ? '全軍防衛（守）'
+        : '全軍遊撃（遊）';
+    setEventBanner({
+      message: `【全軍号令】${stanceName} に全兵士の作戦を一斉変更！`,
+      team: 'player',
+      time: Date.now(),
+    });
+  };
+
   // Presets Application
   const handleApplyPreset = (preset: 'balanced' | 'artillery' | 'assault') => {
     const baseObjectives = createInitialObjectives();
@@ -783,6 +803,7 @@ export default function App() {
             onToggleMute={() => setIsMuted(sounds.toggleMute())}
             selectedSoldier={selectedSoldier}
             onChangeStance={handleChangeStance}
+            onChangeAllStances={handleChangeAllStances}
             battleFunds={battleFunds}
             onSpawnReinforcement={handleSpawnReinforcement}
             hasBomb={hasBomb}
@@ -841,6 +862,8 @@ export default function App() {
             onApplyPreset={handleApplyPreset}
             onClearAll={handleClearAll}
             onStartBattle={startBattle}
+            soldiers={soldiers}
+            onChangeAllStances={handleChangeAllStances}
           />
         )}
       </main>

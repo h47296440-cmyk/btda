@@ -29,6 +29,7 @@ interface BattleHUDProps {
   onToggleMute: () => void;
   selectedSoldier: Soldier | null;
   onChangeStance: (soldierId: string, newStance: SoldierStance) => void;
+  onChangeAllStances: (newStance: SoldierStance) => void;
   battleFunds: number;
   onSpawnReinforcement: (type: 'samurai' | 'archer' | 'sapper' | 'cavalry', stance: SoldierStance) => void;
   hasBomb: boolean;
@@ -51,6 +52,7 @@ export const BattleHUD: React.FC<BattleHUDProps> = ({
   onToggleMute,
   selectedSoldier,
   onChangeStance,
+  onChangeAllStances,
   battleFunds,
   onSpawnReinforcement,
   hasBomb,
@@ -59,6 +61,11 @@ export const BattleHUD: React.FC<BattleHUDProps> = ({
   onToggleBombTargeting,
   eventBanner,
 }) => {
+  // Living player soldiers stats for command
+  const livingPlayerSoldiers = soldiers.filter(s => s.team === 'player' && s.hp > 0);
+  const attackCount = livingPlayerSoldiers.filter(s => s.stance === 'attack').length;
+  const defenseCount = livingPlayerSoldiers.filter(s => s.stance === 'defense').length;
+  const hybridCount = livingPlayerSoldiers.filter(s => s.stance === 'hybrid').length;
   // Player structures
   const playerHonjin = structures.find(s => s.team === 'player' && s.objectiveType === 'honjin');
   const playerMaru1 = structures.find(s => s.team === 'player' && s.objectiveType === 'maru_1');
@@ -312,49 +319,89 @@ export const BattleHUD: React.FC<BattleHUDProps> = ({
           </div>
         </div>
 
-        {/* Selected Soldier Stance Switcher */}
-        <div className="bg-slate-900/90 border border-slate-700/80 rounded-xl p-2.5">
-          <div className="text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
-            <span>🛡️ 兵士方針変更:</span>
-            {selectedSoldier ? (
-              <span className="text-[10px] text-amber-400 font-mono">
-                HP:{selectedSoldier.hp} 撃破:{selectedSoldier.kills}
+        {/* All Soldiers Stance Command & Selected Unit Stance Switcher */}
+        <div className="bg-slate-900/95 border border-slate-700/80 rounded-xl p-2.5 space-y-2">
+          {/* Top: Batch All Soldiers Command */}
+          <div>
+            <div className="text-[11px] font-bold text-amber-300 mb-1 flex items-center justify-between">
+              <span className="flex items-center gap-1">
+                <span>⚔️ 全軍号令 (全員の作戦を一括変更):</span>
               </span>
-            ) : (
-              <span className="text-[10px] text-slate-500 font-normal">兵士をクリックで選択</span>
-            )}
+              <span className="text-[10px] text-slate-400 font-mono">
+                自軍兵: {livingPlayerSoldiers.length}名
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-1.5">
+              <button
+                type="button"
+                onClick={() => onChangeAllStances('attack')}
+                className="py-1 px-1 bg-red-950/70 hover:bg-red-900 border border-red-600/80 text-red-200 rounded text-[11px] font-bold flex items-center justify-center gap-1 transition-colors shadow-sm"
+              >
+                <span className="w-3.5 h-3.5 rounded-full bg-red-600 text-[9px] flex items-center justify-center text-white font-bold">
+                  攻
+                </span>
+                <span>全軍突撃 ({attackCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeAllStances('defense')}
+                className="py-1 px-1 bg-blue-950/70 hover:bg-blue-900 border border-blue-600/80 text-blue-200 rounded text-[11px] font-bold flex items-center justify-center gap-1 transition-colors shadow-sm"
+              >
+                <span className="w-3.5 h-3.5 rounded-full bg-blue-600 text-[9px] flex items-center justify-center text-white font-bold">
+                  守
+                </span>
+                <span>全軍防衛 ({defenseCount})</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onChangeAllStances('hybrid')}
+                className="py-1 px-1 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-600/80 text-emerald-200 rounded text-[11px] font-bold flex items-center justify-center gap-1 transition-colors shadow-sm"
+              >
+                <span className="w-3.5 h-3.5 rounded-full bg-emerald-600 text-[9px] flex items-center justify-center text-white font-bold">
+                  遊
+                </span>
+                <span>全軍遊撃 ({hybridCount})</span>
+              </button>
+            </div>
           </div>
 
+          {/* Bottom: Individual Selected Unit Stance */}
           {selectedSoldier ? (
-            <div className="flex items-center gap-1">
-              {(['defense', 'attack', 'hybrid'] as SoldierStance[]).map(st => {
-                const info = STANCE_INFO[st];
-                const active = selectedSoldier.stance === st;
-                return (
-                  <button
-                    key={st}
-                    type="button"
-                    onClick={() => onChangeStance(selectedSoldier.id, st)}
-                    className={`flex-1 py-1 px-1.5 rounded text-[11px] font-bold border transition-colors flex items-center justify-center gap-1 ${
-                      active
-                        ? 'bg-slate-700 border-amber-400 text-white'
-                        : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
-                    }`}
-                  >
-                    <span
-                      className="w-3 h-3 rounded-full text-[8px] flex items-center justify-center text-white"
-                      style={{ backgroundColor: info.color }}
+            <div className="pt-1.5 border-t border-slate-800 flex items-center justify-between gap-2">
+              <div className="text-[10px] text-amber-400 font-mono shrink-0">
+                選択中: HP{selectedSoldier.hp} (撃破:{selectedSoldier.kills})
+              </div>
+              <div className="flex items-center gap-1 flex-1">
+                {(['defense', 'attack', 'hybrid'] as SoldierStance[]).map(st => {
+                  const info = STANCE_INFO[st];
+                  const active = selectedSoldier.stance === st;
+                  return (
+                    <button
+                      key={st}
+                      type="button"
+                      onClick={() => onChangeStance(selectedSoldier.id, st)}
+                      className={`flex-1 py-0.5 px-1 rounded text-[10px] font-bold border transition-colors flex items-center justify-center gap-0.5 ${
+                        active
+                          ? 'bg-slate-700 border-amber-400 text-white'
+                          : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-750'
+                      }`}
                     >
-                      {info.badge}
-                    </span>
-                    {info.name.split(' ')[0]}
-                  </button>
-                );
-              })}
+                      <span
+                        className="w-2.5 h-2.5 rounded-full text-[7px] flex items-center justify-center text-white"
+                        style={{ backgroundColor: info.color }}
+                      >
+                        {info.badge}
+                      </span>
+                      {info.name.split(' ')[0]}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           ) : (
-            <div className="text-[10px] text-slate-400 truncate py-1">
-              ※やられた兵士は15秒後に自陣から自動復活します
+            <div className="text-[9.5px] text-slate-400 pt-0.5 border-t border-slate-800 flex items-center justify-between">
+              <span>※兵士をクリックすると個別の作戦変更も可能</span>
+              <span className="text-slate-500">やられた兵士は15秒で自陣復活</span>
             </div>
           )}
         </div>

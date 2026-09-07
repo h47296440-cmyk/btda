@@ -630,9 +630,9 @@ export function updateGameStep(
   for (const soldier of soldiers) {
     if (soldier.hp <= 0) continue;
 
-    // Gentle separation push if soldier actually overlaps inside friendly structure
+    // Gentle separation push if soldier actually overlaps inside friendly structure (ignoring friendly walls so troops never get pushed back)
     for (const st of structures) {
-      if (st.hp > 0 && st.team === soldier.team) {
+      if (st.hp > 0 && st.team === soldier.team && !st.type.includes('wall')) {
         const halfW = st.width / 2 + 4;
         const halfH = st.height / 2 + 4;
         const dx = soldier.x - st.x;
@@ -857,7 +857,7 @@ export function updateGameStep(
         const moveSpeed = soldier.speed * 60 * deltaTime;
         const baseAngle = Math.atan2(targetEntity.y - soldier.y, targetEntity.x - soldier.x);
 
-        // Helper to check if a position collides with boundary or any structure
+        // Helper to check if a position collides with boundary or any blocking structure
         const getObstacleAt = (
           px: number,
           py: number,
@@ -868,10 +868,23 @@ export function updateGameStep(
           }
           for (const st of structures) {
             if (st.hp <= 0 || st.id === targetId) continue;
-            // Friendly structures and all walls block passage
-            if (st.team === soldier.team || st.type.includes('wall')) {
-              const hw = st.width / 2 + 4;
-              const hh = st.height / 2 + 4;
+            // FRIENDLY WALLS: Act as castle gates/narrow passages for friendly troops so they never get trapped!
+            if (st.team === soldier.team && st.type.includes('wall')) {
+              continue;
+            }
+            // ENEMY WALLS: Block opposing soldiers (they must attack/destroy or detour around them)
+            if (st.team !== soldier.team && st.type.includes('wall')) {
+              const hw = st.width / 2 + 2;
+              const hh = st.height / 2 + 2;
+              if (Math.abs(px - st.x) < hw && Math.abs(py - st.y) < hh) {
+                return st;
+              }
+            }
+            // BUILDINGS & TURRETS: Solid obstacles to navigate around
+            if (!st.type.includes('wall')) {
+              if (st.id === targetId) continue;
+              const hw = st.width / 2 + 2;
+              const hh = st.height / 2 + 2;
               if (Math.abs(px - st.x) < hw && Math.abs(py - st.y) < hh) {
                 return st;
               }
@@ -886,16 +899,16 @@ export function updateGameStep(
         const obsStep = getObstacleAt(directStepX, directStepY, targetEntity.id);
 
         if (!obsStep) {
-          // Direct step is completely clear!
-          // Reset any temporary detour direction
+          // Direct step is clear!
           soldier.avoidDir = undefined;
+          soldier.stuckTimer = 0;
           soldier.facing = baseAngle;
           soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, directStepX));
           soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, directStepY));
         } else {
-          // Direct step is blocked by an obstacle (friendly wall, friendly building, or enemy wall)
+          // Direct step is blocked by an obstacle (enemy wall or core building)
           if (obsStep !== 'boundary' && obsStep.team === enemyTeam && obsStep.type.includes('wall')) {
-            // If it's an enemy wall and soldier is sapper (or attack stance), attack it
+            // Attack enemy wall if in attack stance or sapper
             if (soldier.type === 'sapper' || soldier.stance === 'attack') {
               if (currentTime - soldier.lastAttackTime >= soldier.attackCooldown) {
                 soldier.lastAttackTime = currentTime;
@@ -907,72 +920,86 @@ export function updateGameStep(
             }
           }
 
-          // Wall Detour Navigation: Find a way around the wall!
-          const obs = obsStep !== 'boundary' ? obsStep : null;
+          // Smart Tangent Wall-Sliding & Detour Navigation
+          let moved = false;
+          const diffX = targetEntity.x - soldier.x;
+          const diffY = targetEntity.y - soldier.y;
 
-          // Determine preferred detour direction if not already set
-          if (soldier.avoidDir === undefined) {
-            if (obs) {
-              const dx = soldier.x - obs.x;
-              const dy = soldier.y - obs.y;
-              // If approaching mostly horizontally, detour vertically (up or down)
-              if (Math.abs(dx) >= Math.abs(dy)) {
-                // Pick whichever vertical side brings soldier closer to target, or toward center
-                soldier.avoidDir = targetEntity.y < soldier.y ? -1 : 1;
-              } else {
-                // If approaching vertically, detour horizontally
-                soldier.avoidDir = targetEntity.x < soldier.x ? -1 : 1;
-              }
-            } else {
-              soldier.avoidDir = 1;
-            }
-          }
-
-          // Test candidate angles prioritizing the preferred detour direction
-          const dir = soldier.avoidDir || 1;
-          const candidateAngles: number[] = [
-            baseAngle + dir * (45 * Math.PI / 180),
-            baseAngle + dir * (70 * Math.PI / 180),
-            baseAngle + dir * (90 * Math.PI / 180),
-            baseAngle + dir * (115 * Math.PI / 180),
-            baseAngle + dir * (135 * Math.PI / 180),
-            // Reverse direction as fallback
-            baseAngle - dir * (45 * Math.PI / 180),
-            baseAngle - dir * (70 * Math.PI / 180),
-            baseAngle - dir * (90 * Math.PI / 180),
-            baseAngle - dir * (115 * Math.PI / 180),
-            baseAngle - dir * (135 * Math.PI / 180),
-            baseAngle + Math.PI, // retreat a step to unstick
-          ];
-
-          let detourTaken = false;
-          for (const testAngle of candidateAngles) {
-            const nextCandX = soldier.x + Math.cos(testAngle) * moveSpeed;
-            const nextCandY = soldier.y + Math.sin(testAngle) * moveSpeed;
-            if (!getObstacleAt(nextCandX, nextCandY, targetEntity.id)) {
-              soldier.facing = testAngle;
-              soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, nextCandX));
-              soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, nextCandY));
-              detourTaken = true;
-              break;
-            }
-          }
-
-          if (!detourTaken) {
-            // Sliding along open coordinate axis as ultimate fallback
-            const signY = (soldier.avoidDir || (targetEntity.y >= soldier.y ? 1 : -1));
-            const candY = soldier.y + signY * moveSpeed;
+          // Helper to try vertical slide (along Y)
+          const trySlideY = (): boolean => {
+            const prefSignY = diffY >= 0 ? 1 : -1;
+            const candY = soldier.y + prefSignY * moveSpeed;
             if (!getObstacleAt(soldier.x, candY, targetEntity.id)) {
               soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, candY));
-            } else {
-              const signX = targetEntity.x >= soldier.x ? 1 : -1;
-              const candX = soldier.x + signX * moveSpeed;
-              if (!getObstacleAt(candX, soldier.y, targetEntity.id)) {
-                soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, candX));
-              } else {
-                // If completely pinched, flip detour direction to try other side
-                soldier.avoidDir = -dir;
+              soldier.facing = prefSignY > 0 ? Math.PI / 2 : -Math.PI / 2;
+              return true;
+            }
+            // Try opposite direction along Y
+            const altY = soldier.y - prefSignY * moveSpeed;
+            if (!getObstacleAt(soldier.x, altY, targetEntity.id)) {
+              soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, altY));
+              soldier.facing = prefSignY > 0 ? -Math.PI / 2 : Math.PI / 2;
+              return true;
+            }
+            return false;
+          };
+
+          // Helper to try horizontal slide (along X)
+          const trySlideX = (): boolean => {
+            const prefSignX = diffX >= 0 ? 1 : -1;
+            const candX = soldier.x + prefSignX * moveSpeed;
+            if (!getObstacleAt(candX, soldier.y, targetEntity.id)) {
+              soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, candX));
+              soldier.facing = prefSignX > 0 ? 0 : Math.PI;
+              return true;
+            }
+            // Try opposite direction along X
+            const altX = soldier.x - prefSignX * moveSpeed;
+            if (!getObstacleAt(altX, soldier.y, targetEntity.id)) {
+              soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, altX));
+              soldier.facing = prefSignX > 0 ? Math.PI : 0;
+              return true;
+            }
+            return false;
+          };
+
+          // If predominantly moving horizontally, slide vertically first to bypass the wall
+          if (Math.abs(diffX) >= Math.abs(diffY)) {
+            moved = trySlideY() || trySlideX();
+          } else {
+            moved = trySlideX() || trySlideY();
+          }
+
+          if (!moved) {
+            // Detour angle scan as secondary fallback
+            const candidateAngles = [
+              baseAngle + (60 * Math.PI) / 180,
+              baseAngle - (60 * Math.PI) / 180,
+              baseAngle + (100 * Math.PI) / 180,
+              baseAngle - (100 * Math.PI) / 180,
+            ];
+            for (const ang of candidateAngles) {
+              const cx = soldier.x + Math.cos(ang) * moveSpeed;
+              const cy = soldier.y + Math.sin(ang) * moveSpeed;
+              if (!getObstacleAt(cx, cy, targetEntity.id)) {
+                soldier.facing = ang;
+                soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, cx));
+                soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, cy));
+                moved = true;
+                break;
               }
+            }
+          }
+
+          if (moved) {
+            soldier.stuckTimer = 0;
+          } else {
+            soldier.stuckTimer = (soldier.stuckTimer || 0) + deltaTime;
+            // Deadlock breaker: small lateral nudge if pinched
+            if (soldier.stuckTimer > 0.25) {
+              const nudgeSign = (soldier.id.charCodeAt(0) % 2 === 0 ? 1 : -1);
+              soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, soldier.y + nudgeSign * 2));
+              soldier.stuckTimer = 0;
             }
           }
         }

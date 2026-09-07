@@ -824,13 +824,15 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
       return;
     }
 
-    // STRICT: Only wall category enters continuous drag placement!
+    // STRICT: ONLY wall category is allowed continuous dragging/tracing!
     if (phase === 'build' && selectedItem?.category === 'wall') {
       const interactive = isOverInteractiveItem(coords.x, coords.y);
       if (!interactive) {
         isDraggingRef.current = true;
         handleDragPlacement(coords.x, coords.y);
       }
+    } else {
+      isDraggingRef.current = false;
     }
   };
 
@@ -841,12 +843,12 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
 
     if (pointerStartRef.current) {
       const d = Math.hypot(coords.x - pointerStartRef.current.x, coords.y - pointerStartRef.current.y);
-      if (d > 8) {
+      if (d > 12) {
         hasDraggedRef.current = true;
       }
     }
 
-    // STRICT: Tracing/dragging placement is ONLY ALLOWED FOR WALLS!
+    // STRICT: ONLY WALLS CAN BE DRAGGED/TRACED
     if (isDraggingRef.current && phase === 'build' && selectedItem?.category === 'wall') {
       handleDragPlacement(coords.x, coords.y);
     }
@@ -856,25 +858,32 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
     if (touchHandledRef.current) return;
     const coords = getCanvasCoords(e.clientX, e.clientY);
 
-    // If it was a discrete click without dragging
-    if (!hasDraggedRef.current && coords) {
-      // Soldier selection check first
+    if (coords && pointerStartRef.current) {
+      const totalMove = Math.hypot(coords.x - pointerStartRef.current.x, coords.y - pointerStartRef.current.y);
+      
+      // If clicking soldier during battle
       const clickedSoldier = soldiers.find(
         s => s.team === 'player' && s.hp > 0 && Math.hypot(s.x - coords.x, s.y - coords.y) <= 24
       );
-      if (clickedSoldier) {
+
+      if (clickedSoldier && totalMove < 24) {
         onSelectSoldier(clickedSoldier.id);
-      } else {
-        // Handle canvas click (placing turret/soldier or refunding existing item)
+      } else if (phase === 'build') {
         if (selectedItem?.category !== 'wall') {
-          onCanvasClick(coords.x, coords.y);
-        } else {
-          // If clicking an existing player item with wall tool, trigger refund
-          const existing = structures.find(
-            s => s.team === 'player' && !s.isObjective && Math.hypot(s.x - coords.x, s.y - coords.y) <= s.width / 2 + 10
-          );
-          if (existing) {
+          // Turrets and Soldiers: STRICTLY SINGLE CLICK PLACEMENT (no tracing/dragging)
+          // As long as mouse didn't drag extensively across canvas
+          if (totalMove < 30) {
             onCanvasClick(coords.x, coords.y);
+          }
+        } else {
+          // Wall: if clicked without dragging, place a single wall node or refund if existing
+          if (!hasDraggedRef.current && totalMove < 15) {
+            const existing = structures.find(
+              s => s.team === 'player' && !s.isObjective && Math.hypot(s.x - coords.x, s.y - coords.y) <= s.width / 2 + 10
+            );
+            if (existing) {
+              onCanvasClick(coords.x, coords.y);
+            }
           }
         }
       }
@@ -886,7 +895,7 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
     lastPlacedPosRef.current = null;
   };
 
-  // Touch Events for Mobile (Wall dragging & single taps)
+  // Touch Events for Mobile (Wall dragging & single taps for turrets/soldiers)
   const handleTouchStart = (e: React.TouchEvent<HTMLCanvasElement>) => {
     touchHandledRef.current = true;
     if (e.touches.length === 0) return;
@@ -911,6 +920,8 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
         isDraggingRef.current = true;
         handleDragPlacement(coords.x, coords.y);
       }
+    } else {
+      isDraggingRef.current = false;
     }
   };
 
@@ -923,7 +934,7 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
 
     if (pointerStartRef.current) {
       const d = Math.hypot(coords.x - pointerStartRef.current.x, coords.y - pointerStartRef.current.y);
-      if (d > 8) {
+      if (d > 12) {
         hasDraggedRef.current = true;
       }
     }
@@ -938,19 +949,22 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
     if (!pointerStartRef.current) return;
     const { x, y } = pointerStartRef.current;
 
-    // Only process tap if finger did NOT drag
-    if (!hasDraggedRef.current) {
-      const clickedSoldier = soldiers.find(
-        s => s.team === 'player' && s.hp > 0 && Math.hypot(s.x - x, s.y - y) <= 24
-      );
-      if (clickedSoldier) {
-        onSelectSoldier(clickedSoldier.id);
-      } else {
-        if (selectedItem?.category !== 'wall') {
-          // Discrete single tap for turret or soldier
+    // Check soldier selection
+    const clickedSoldier = soldiers.find(
+      s => s.team === 'player' && s.hp > 0 && Math.hypot(s.x - x, s.y - y) <= 24
+    );
+
+    if (clickedSoldier && !hasDraggedRef.current) {
+      onSelectSoldier(clickedSoldier.id);
+    } else if (phase === 'build') {
+      if (selectedItem?.category !== 'wall') {
+        // Turrets and soldiers: 1-click single placement
+        if (!hasDraggedRef.current) {
           onCanvasClick(x, y);
-        } else {
-          // Tapping existing item with wall tool triggers refund
+        }
+      } else {
+        // Tapping existing item with wall tool triggers refund
+        if (!hasDraggedRef.current) {
           const existing = structures.find(
             s => s.team === 'player' && !s.isObjective && Math.hypot(s.x - x, s.y - y) <= s.width / 2 + 10
           );

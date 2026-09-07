@@ -6,7 +6,7 @@ import {
   STANCE_INFO,
   BOMB_CONFIG,
 } from '../gameConfig';
-import { SoldierStance } from '../types';
+import { SoldierStance, Soldier } from '../types';
 import {
   Shield,
   Crosshair,
@@ -18,6 +18,7 @@ import {
   Swords,
   Bomb,
   Check,
+  Zap,
 } from 'lucide-react';
 
 interface BuildPanelProps {
@@ -36,6 +37,8 @@ interface BuildPanelProps {
   onApplyPreset: (preset: 'balanced' | 'artillery' | 'assault') => void;
   onClearAll: () => void;
   onStartBattle: () => void;
+  soldiers?: Soldier[];
+  onChangeAllStances?: (newStance: SoldierStance) => void;
 }
 
 export const BuildPanel: React.FC<BuildPanelProps> = ({
@@ -54,7 +57,13 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
   onApplyPreset,
   onClearAll,
   onStartBattle,
+  soldiers = [],
+  onChangeAllStances,
 }) => {
+  const playerSoldiers = soldiers.filter(s => s.team === 'player');
+  const attackCount = playerSoldiers.filter(s => s.stance === 'attack').length;
+  const defenseCount = playerSoldiers.filter(s => s.stance === 'defense').length;
+  const hybridCount = playerSoldiers.filter(s => s.stance === 'hybrid').length;
   return (
     <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-3 sm:p-4 shadow-xl space-y-3.5 text-slate-100">
       {/* Top Header: Budget, Timer, and Actions */}
@@ -193,8 +202,8 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
               : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300 border-slate-700'
           }`}
         >
-          <Shield className="w-4 h-4" />
-          防壁・城壁素材 (なぞり引き)
+          <Shield className="w-4 h-4 text-amber-400" />
+          <span>防壁素材 <span className="text-[10px] text-amber-300 font-normal">✍️なぞり可</span></span>
         </button>
         <button
           type="button"
@@ -208,8 +217,8 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
               : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300 border-slate-700'
           }`}
         >
-          <Crosshair className="w-4 h-4" />
-          砲台・迎撃施設
+          <Crosshair className="w-4 h-4 text-blue-400" />
+          <span>迎撃砲台 <span className="text-[10px] text-blue-300 font-normal">👆1クリック</span></span>
         </button>
         <button
           type="button"
@@ -223,8 +232,8 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
               : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300 border-slate-700'
           }`}
         >
-          <Users className="w-4 h-4" />
-          兵士雇用・戦術指定
+          <Users className="w-4 h-4 text-emerald-400" />
+          <span>出撃兵士 <span className="text-[10px] text-emerald-300 font-normal">👆1クリック</span></span>
         </button>
       </div>
 
@@ -252,7 +261,10 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-300 line-clamp-1 mb-0.5">{item.description}</div>
-                <div className="text-[10px] text-amber-300/90 font-mono font-medium">{item.details}</div>
+                <div className="flex items-center justify-between text-[10px] text-amber-300/90 font-mono font-medium">
+                  <span>{item.details}</span>
+                  <span className="text-amber-400 font-sans font-bold bg-amber-950/80 px-1 rounded">✍️なぞり可</span>
+                </div>
               </button>
             );
           })}
@@ -279,7 +291,10 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-300 line-clamp-1 mb-0.5">{item.description}</div>
-                <div className="text-[10px] text-blue-300 font-mono font-medium">{item.details}</div>
+                <div className="flex items-center justify-between text-[10px] text-blue-300 font-mono font-medium">
+                  <span>{item.details}</span>
+                  <span className="text-slate-400 font-sans">👆1基配置</span>
+                </div>
               </button>
             );
           })}
@@ -306,55 +321,102 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-300 line-clamp-1 mb-0.5">{item.description}</div>
-                <div className="text-[10px] text-emerald-300 font-mono font-medium">{item.details}</div>
+                <div className="flex items-center justify-between text-[10px] text-emerald-300 font-mono font-medium">
+                  <span>{item.details}</span>
+                  <span className="text-slate-400 font-sans">👆1名配置</span>
+                </div>
               </button>
             );
           })}
       </div>
 
-      {/* SOLDIER STANCE SELECTION */}
+      {/* SOLDIER STANCE SELECTION & BATCH CONTROL */}
       {selectedCategory === 'soldier' && (
-        <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-2.5">
-          <div className="text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
-            <span>配置兵士の戦術指定:</span>
-            <span className="text-[11px] text-slate-400 font-normal">※やられた兵士は15秒後に自陣から復活します</span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-            {(['defense', 'attack', 'hybrid'] as SoldierStance[]).map(stance => {
-              const info = STANCE_INFO[stance];
-              const isCurrent = soldierStance === stance;
-              return (
-                <button
-                  key={stance}
-                  type="button"
-                  onClick={() => setSoldierStance(stance)}
-                  className={`p-2 rounded-lg border text-left flex items-start gap-2 transition-all ${
-                    isCurrent
-                      ? 'bg-slate-700 border-amber-400 shadow ring-1 ring-amber-400/40'
-                      : 'bg-slate-900/60 hover:bg-slate-900 border-slate-700'
-                  }`}
-                >
-                  <span
-                    className="w-5 h-5 rounded-full flex items-center justify-center font-bold text-[11px] text-white shrink-0 mt-0.5"
-                    style={{ backgroundColor: info.color }}
+        <div className="space-y-2">
+          {/* New Deployed Stance Selector */}
+          <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-2.5">
+            <div className="text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
+              <span>新規配置兵士の初期作戦:</span>
+              <span className="text-[11px] text-slate-400 font-normal">※やられた兵士は15秒後に自陣から復活します</span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              {(['defense', 'attack', 'hybrid'] as SoldierStance[]).map(stance => {
+                const info = STANCE_INFO[stance];
+                const isCurrent = soldierStance === stance;
+                return (
+                  <button
+                    key={stance}
+                    type="button"
+                    onClick={() => setSoldierStance(stance)}
+                    className={`p-2 rounded-lg border text-left flex items-start gap-2 transition-all ${
+                      isCurrent
+                        ? 'bg-slate-700 border-amber-400 shadow ring-1 ring-amber-400/40'
+                        : 'bg-slate-900/60 hover:bg-slate-900 border-slate-700'
+                    }`}
                   >
-                    {info.badge}
-                  </span>
-                  <div>
-                    <div className="font-bold text-xs text-slate-100">{info.name}</div>
-                    <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{info.desc}</div>
-                  </div>
-                </button>
-              );
-            })}
+                    <span
+                      className="w-5 h-5 rounded-full flex items-center justify-center font-bold text-[11px] text-white shrink-0 mt-0.5"
+                      style={{ backgroundColor: info.color }}
+                    >
+                      {info.badge}
+                    </span>
+                    <div>
+                      <div className="font-bold text-xs text-slate-100">{info.name}</div>
+                      <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{info.desc}</div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
+
+          {/* ALL SOLDIERS STANCE BATCH SWITCHER */}
+          {playerSoldiers.length > 0 && onChangeAllStances && (
+            <div className="bg-gradient-to-r from-slate-800/90 to-slate-900/90 border border-amber-500/40 rounded-xl p-2.5">
+              <div className="text-xs font-bold text-amber-300 mb-1.5 flex items-center justify-between">
+                <span className="flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
+                  全員の作戦を一括変更 (配置済み {playerSoldiers.length}名):
+                </span>
+                <span className="text-[10px] text-slate-400 font-mono">
+                  攻:{attackCount}名 / 守:{defenseCount}名 / 遊:{hybridCount}名
+                </span>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => onChangeAllStances('attack')}
+                  className="py-1.5 px-2 bg-red-950/60 hover:bg-red-900 border border-red-600 text-red-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all"
+                >
+                  <span className="w-4 h-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center">攻</span>
+                  <span>全員「攻」に変更</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeAllStances('defense')}
+                  className="py-1.5 px-2 bg-blue-950/60 hover:bg-blue-900 border border-blue-600 text-blue-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all"
+                >
+                  <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center">守</span>
+                  <span>全員「守」に変更</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onChangeAllStances('hybrid')}
+                  className="py-1.5 px-2 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-600 text-emerald-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all"
+                >
+                  <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center">遊</span>
+                  <span>全員「遊」に変更</span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* Instructions bar */}
       <div className="text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2 px-1">
         <span>
-          💡 <strong>配置方法:</strong> 壁はエリアを<strong>ドラッグ（なぞる）</strong>して連続築城できます。<span className="text-amber-300 font-medium">（※砲台と兵士は誤配置防止のためクリック/タップで1つずつ配置）</span>
+          💡 <strong>配置方法:</strong> <span className="text-amber-300 font-bold">なぞって連続配置できるのは「壁」のみです。</span>砲台と兵士は1回クリックで1基ずつ配置されます。
         </span>
         <span className="text-amber-400/90 font-medium">
           ※ 2つの丸を破壊すると本陣攻撃可能！ 3分制限時間経過時は城砦の合計体力で判定勝ち！
