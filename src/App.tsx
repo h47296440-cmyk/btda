@@ -342,7 +342,7 @@ export default function App() {
       return;
     }
 
-    // Otherwise, place new turret or soldier if inside player build zone
+    // Otherwise, place new wall, turret or soldier if inside player build zone
     if (
       x < PLAYER_BUILD_ZONE.minX ||
       x > PLAYER_BUILD_ZONE.maxX ||
@@ -352,7 +352,34 @@ export default function App() {
       return;
     }
 
-    if (selectedCategory === 'turret') {
+    if (selectedCategory === 'wall') {
+      const def = WALL_DEFS[selectedItemId as MaterialType];
+      if (!def || playerBudget < def.cost) return;
+
+      // Check distance to existing structures to avoid duplicate stacking
+      for (const s of structures) {
+        if (Math.hypot(s.x - x, s.y - y) < 22) return;
+      }
+
+      setPlayerBudget(b => b - def.cost);
+      setStructures(prev => [
+        ...prev,
+        {
+          id: 'player_wall_' + Math.random().toString(36).substring(2, 9),
+          type: selectedItemId as MaterialType,
+          team: 'player',
+          x,
+          y,
+          width: 34,
+          height: 34,
+          hp: def.hp!,
+          maxHp: def.hp!,
+          cost: def.cost,
+          spikeDamage: selectedItemId === 'spike_wall' ? 20 : 0,
+        },
+      ]);
+      sounds.playPlace();
+    } else if (selectedCategory === 'turret') {
       const def = TURRET_DEFS[selectedItemId as TurretType];
       if (!def || playerBudget < def.cost) return;
 

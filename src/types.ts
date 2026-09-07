@@ -55,6 +55,8 @@ export interface Soldier {
   facing: number; // angle in radians
   isAttacking?: boolean;
   attackAnimTimer?: number;
+  avoidDir?: number; // Preference direction (+1 or -1) when steering around obstacles
+  stuckTimer?: number; // Track duration near obstacles to resolve deadlocks
 }
 
 export interface Projectile {

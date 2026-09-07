@@ -354,7 +354,7 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
       {/* Instructions bar */}
       <div className="text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2 px-1">
         <span>
-          💡 <strong>壁の引き方:</strong> 壁を選び、左側の築城エリアを<strong>ドラッグ（なぞる）</strong>すると連続して防壁が作られます。
+          💡 <strong>配置方法:</strong> 壁はエリアを<strong>ドラッグ（なぞる）</strong>して連続築城できます。<span className="text-amber-300 font-medium">（※砲台と兵士は誤配置防止のためクリック/タップで1つずつ配置）</span>
         </span>
         <span className="text-amber-400/90 font-medium">
           ※ 2つの丸を破壊すると本陣攻撃可能！ 3分制限時間経過時は城砦の合計体力で判定勝ち！
