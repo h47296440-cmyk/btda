@@ -1,24 +1,35 @@
 import { MaterialType, TurretType, SoldierType, SoldierStance } from './types';
 
-export const FIELD_WIDTH = 1200;
-export const FIELD_HEIGHT = 650;
+export const FIELD_WIDTH = 1300;
+export const FIELD_HEIGHT = 680;
 
 export const PLAYER_BUILD_ZONE = {
-  minX: 40,
-  maxX: 460,
-  minY: 40,
-  maxY: 610,
+  minX: 30,
+  maxX: 550,
+  minY: 30,
+  maxY: 650,
 };
 
 export const ENEMY_BUILD_ZONE = {
-  minX: 740,
-  maxX: 1160,
-  minY: 40,
-  maxY: 610,
+  minX: 750,
+  maxX: 1270,
+  minY: 30,
+  maxY: 650,
 };
 
-export const STARTING_BUDGET = 1800;
-export const BUILD_TIME_LIMIT = 45; // seconds
+export const STARTING_BUDGET = 2600; // 予算増加 (1800 -> 2600)
+export const BUILD_TIME_LIMIT = 50; // seconds
+export const BATTLE_TIME_LIMIT = 180; // 3分制限時間 (180秒)
+export const SOLDIER_RESPAWN_SECONDS = 15; // やられた兵は15秒で復活
+export const KILL_BOUNTY_GOLD = 45; // 相手の兵を倒すと予算獲得
+
+export const BOMB_CONFIG = {
+  cost: 250,
+  damage: 480,
+  radius: 110,
+  name: '決戦援護爆弾',
+  description: '予算で購入し、戦場の好きな位置へ投下できる強力な一撃爆弾。',
+};
 
 export interface ItemDef {
   id: string;

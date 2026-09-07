@@ -100,6 +100,26 @@ export interface Particle {
 
 export type GamePhase = 'build' | 'battle' | 'ended';
 
+export type Winner = Team | 'draw' | null;
+
+export interface RespawnQueueItem {
+  id: string;
+  type: SoldierType;
+  team: Team;
+  stance: SoldierStance;
+  respawnTime: number; // gameTime when soldier respawns (15 seconds after death)
+}
+
+export interface TacticalBomb {
+  id: string;
+  targetX: number;
+  targetY: number;
+  startY: number;
+  currentY: number;
+  progress: number;
+  exploded: boolean;
+}
+
 export interface GameStats {
   wallsDestroyedByPlayer: number;
   wallsDestroyedByEnemy: number;
@@ -107,5 +127,8 @@ export interface GameStats {
   soldiersKilledByEnemy: number;
   damageDealtByPlayer: number;
   damageDealtByEnemy: number;
-  winner: Team | null;
+  winner: Winner;
+  endReason?: 'honjin_destroyed' | 'time_limit';
+  playerTotalHp?: number;
+  enemyTotalHp?: number;
 }

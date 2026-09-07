@@ -14,19 +14,25 @@ import {
   SoldierStance,
   GameStats,
   Team,
+  Winner,
   MaterialType,
   TurretType,
   SoldierType,
+  RespawnQueueItem,
+  TacticalBomb,
 } from './types';
 import {
   STARTING_BUDGET,
   BUILD_TIME_LIMIT,
+  BATTLE_TIME_LIMIT,
   FIELD_WIDTH,
   FIELD_HEIGHT,
   PLAYER_BUILD_ZONE,
   WALL_DEFS,
   TURRET_DEFS,
   SOLDIER_DEFS,
+  BOMB_CONFIG,
+  KILL_BOUNTY_GOLD,
 } from './gameConfig';
 import {
   createInitialObjectives,
@@ -38,7 +44,7 @@ import { BattleCanvas } from './components/BattleCanvas';
 import { BuildPanel } from './components/BuildPanel';
 import { BattleHUD } from './components/BattleHUD';
 import { ResultModal, HelpModal } from './components/GameModal';
-import { Castle, HelpCircle, Volume2, VolumeX, Shield, Swords, Sparkles } from 'lucide-react';
+import { Castle, HelpCircle, Volume2, VolumeX } from 'lucide-react';
 
 export default function App() {
   // Game Phase
@@ -50,12 +56,19 @@ export default function App() {
   const [projectiles, setProjectiles] = useState<Projectile[]>([]);
   const [damageNumbers, setDamageNumbers] = useState<DamageNumber[]>([]);
   const [particles, setParticles] = useState<Particle[]>([]);
+  const [respawnQueue, setRespawnQueue] = useState<RespawnQueueItem[]>([]);
+
+  // Special Weapon: Tactical Bomb
+  const [tacticalBomb, setTacticalBomb] = useState<TacticalBomb | null>(null);
+  const [hasBomb, setHasBomb] = useState<boolean>(false);
+  const [isBombUsed, setIsBombUsed] = useState<boolean>(false);
+  const [isBombTargeting, setIsBombTargeting] = useState<boolean>(false);
 
   // Economics & Preparation
   const [playerBudget, setPlayerBudget] = useState<number>(STARTING_BUDGET);
   const [buildTimeLeft, setBuildTimeLeft] = useState<number>(BUILD_TIME_LIMIT);
   const [battleTime, setBattleTime] = useState<number>(0);
-  const [battleFunds, setBattleFunds] = useState<number>(150);
+  const [battleFunds, setBattleFunds] = useState<number>(180);
 
   // Speed & Audio
   const [gameSpeed, setGameSpeed] = useState<number>(1);
@@ -72,7 +85,7 @@ export default function App() {
   // Notifications & Modals
   const [eventBanner, setEventBanner] = useState<{ message: string; team: Team; time: number } | null>(null);
   const [isHelpOpen, setIsHelpOpen] = useState<boolean>(false);
-  const [winner, setWinner] = useState<Team | null>(null);
+  const [winner, setWinner] = useState<Winner>(null);
   const [enemyStrategyIndex, setEnemyStrategyIndex] = useState<number>(0);
 
   // Game Statistics
@@ -95,7 +108,6 @@ export default function App() {
   const initEnemy = useCallback((strategyIdx: number) => {
     const enemySetup = generateEnemySetup(strategyIdx);
     setStructures(prev => {
-      // Keep existing player structures & objectives, replace enemy defense
       const baseObjectives = createInitialObjectives();
       const playerPlaced = prev.filter(s => s.team === 'player' && !s.isObjective);
       return [...baseObjectives, ...playerPlaced, ...enemySetup.structures];
@@ -156,69 +168,82 @@ export default function App() {
       gameTimeRef.current += dt;
 
       if (!isPaused && dt > 0) {
-        setBattleTime(prev => prev + dt);
+        setBattleTime(prev => {
+          const newTime = prev + dt;
 
-        // Passive battle funds generation (e.g. +3 Gold per second)
-        setBattleFunds(prev => Math.min(600, prev + 3 * dt));
+          // Passive battle funds generation (+3 Gold/s)
+          setBattleFunds(f => Math.min(800, f + 3 * dt));
 
-        setStructures(prevStructs => {
-          setSoldiers(prevSoldiers => {
-            const stepResult = updateGameStep(
-              prevStructs,
-              prevSoldiers,
-              projectiles,
-              damageNumbers,
-              particles,
-              stats,
-              dt,
-              gameTimeRef.current,
-              // Callback when a Maru falls
-              (team, maruType) => {
-                const isPlayerVictim = team === 'player';
-                setEventBanner({
-                  message: isPlayerVictim
-                    ? `⚠️ 自軍の【${maruType}】が陥落しました！`
-                    : `💥 敵軍の【${maruType}】を撃破！`,
-                  team,
-                  time: Date.now(),
-                });
-                sounds.playWallBreak();
-              },
-              // Callback when Honjin is exposed (both Maru destroyed)
-              team => {
-                const isPlayerExposed = team === 'player';
-                setEventBanner({
-                  message: isPlayerExposed
-                    ? `🚨 警報！自陣の二の丸・三の丸が両方陥落！本陣の結界が消滅！`
-                    : `🔥 好機！敵の二の丸・三の丸を完全撃破！敵本陣へ攻撃可能！`,
-                  team,
-                  time: Date.now(),
-                });
-                sounds.playWarHorn();
+          setStructures(prevStructs => {
+            setSoldiers(prevSoldiers => {
+              const stepResult = updateGameStep(
+                prevStructs,
+                prevSoldiers,
+                projectiles,
+                damageNumbers,
+                particles,
+                respawnQueue,
+                tacticalBomb,
+                stats,
+                dt,
+                gameTimeRef.current,
+                newTime,
+                // Callback when a Maru falls
+                (team, maruType) => {
+                  const isPlayerVictim = team === 'player';
+                  setEventBanner({
+                    message: isPlayerVictim
+                      ? `⚠️ 自軍の【${maruType}】が陥落しました！`
+                      : `💥 敵軍の【${maruType}】を撃破！`,
+                    team,
+                    time: Date.now(),
+                  });
+                  sounds.playWallBreak();
+                },
+                // Callback when Honjin is exposed (both Maru destroyed)
+                team => {
+                  const isPlayerExposed = team === 'player';
+                  setEventBanner({
+                    message: isPlayerExposed
+                      ? `🚨 警報！自陣の二の丸・三の丸が両方陥落！本陣の結界が消滅！`
+                      : `🔥 好機！敵の二の丸・三の丸を完全撃破！敵本陣へ攻撃可能！`,
+                    team,
+                    time: Date.now(),
+                  });
+                  sounds.playWarHorn();
+                },
+                // Callback when enemy soldier killed: award player gold bounty!
+                (_x, _y, bounty) => {
+                  setBattleFunds(f => Math.min(800, f + bounty));
+                }
+              );
+
+              // Sync visual buffers and simulation state
+              setProjectiles(stepResult.projectiles);
+              setDamageNumbers(stepResult.damageNumbers);
+              setParticles(stepResult.particles);
+              setRespawnQueue(stepResult.respawnQueue);
+              setTacticalBomb(stepResult.tacticalBomb);
+              setStats(stepResult.stats);
+
+              // Check victory / defeat / draw
+              if (stepResult.winner && phase === 'battle') {
+                setWinner(stepResult.winner);
+                setPhase('ended');
+                if (stepResult.winner === 'player') {
+                  sounds.playVictory();
+                } else {
+                  sounds.playDefeat();
+                }
               }
-            );
 
-            // Sync visual buffers
-            setProjectiles(stepResult.projectiles);
-            setDamageNumbers(stepResult.damageNumbers);
-            setParticles(stepResult.particles);
-            setStats(stepResult.stats);
+              return stepResult.soldiers;
+            });
 
-            // Check victory / defeat
-            if (stepResult.winner && phase === 'battle') {
-              setWinner(stepResult.winner);
-              setPhase('ended');
-              if (stepResult.winner === 'player') {
-                sounds.playVictory();
-              } else {
-                sounds.playDefeat();
-              }
-            }
-
-            return stepResult.soldiers;
+            return prevStructs;
           });
 
-          return prevStructs;
+          return newTime;
         });
       }
 
@@ -233,18 +258,62 @@ export default function App() {
         cancelAnimationFrame(requestRef.current);
       }
     };
-  }, [phase, isPaused, gameSpeed, projectiles, damageNumbers, particles, stats]);
+  }, [phase, isPaused, gameSpeed, projectiles, damageNumbers, particles, respawnQueue, tacticalBomb, stats]);
 
   // Handle Banner timeout
   useEffect(() => {
     if (!eventBanner) return;
     const t = setTimeout(() => {
       setEventBanner(null);
-    }, 4500);
+    }, 4000);
     return () => clearTimeout(t);
   }, [eventBanner]);
 
-  // Click on Canvas
+  // Continuous Drag-to-Draw Wall Placement
+  const handlePlaceWallSegment = (x: number, y: number): boolean => {
+    if (phase !== 'build' || selectedCategory !== 'wall') return false;
+    const def = WALL_DEFS[selectedItemId as MaterialType];
+    if (!def || playerBudget < def.cost) return false;
+
+    // Check bounds
+    if (
+      x < PLAYER_BUILD_ZONE.minX ||
+      x > PLAYER_BUILD_ZONE.maxX ||
+      y < PLAYER_BUILD_ZONE.minY ||
+      y > PLAYER_BUILD_ZONE.maxY
+    ) {
+      return false;
+    }
+
+    // Check distance to existing structures to avoid stacking on top
+    for (const s of structures) {
+      if (Math.hypot(s.x - x, s.y - y) < 22) {
+        return false;
+      }
+    }
+
+    setPlayerBudget(b => b - def.cost);
+    setStructures(prev => [
+      ...prev,
+      {
+        id: 'player_wall_' + Math.random().toString(36).substring(2, 9),
+        type: selectedItemId as MaterialType,
+        team: 'player',
+        x,
+        y,
+        width: 34,
+        height: 34,
+        hp: def.hp!,
+        maxHp: def.hp!,
+        cost: def.cost,
+        spikeDamage: selectedItemId === 'spike_wall' ? 20 : 0,
+      },
+    ]);
+    sounds.playPlace();
+    return true;
+  };
+
+  // Click on Canvas for single placements & refunds
   const handleCanvasClick = (x: number, y: number) => {
     if (phase !== 'build') return;
 
@@ -273,7 +342,7 @@ export default function App() {
       return;
     }
 
-    // Otherwise, place new item if inside player build zone
+    // Otherwise, place new turret or soldier if inside player build zone
     if (
       x < PLAYER_BUILD_ZONE.minX ||
       x > PLAYER_BUILD_ZONE.maxX ||
@@ -283,29 +352,7 @@ export default function App() {
       return;
     }
 
-    if (selectedCategory === 'wall') {
-      const def = WALL_DEFS[selectedItemId as MaterialType];
-      if (!def || playerBudget < def.cost) return;
-
-      setPlayerBudget(b => b - def.cost);
-      setStructures(prev => [
-        ...prev,
-        {
-          id: 'player_wall_' + Math.random().toString(36).substring(2, 9),
-          type: selectedItemId as MaterialType,
-          team: 'player',
-          x,
-          y,
-          width: 36,
-          height: 36,
-          hp: def.hp!,
-          maxHp: def.hp!,
-          cost: def.cost,
-          spikeDamage: selectedItemId === 'spike_wall' ? 20 : 0,
-        },
-      ]);
-      sounds.playPlace();
-    } else if (selectedCategory === 'turret') {
+    if (selectedCategory === 'turret') {
       const def = TURRET_DEFS[selectedItemId as TurretType];
       if (!def || playerBudget < def.cost) return;
 
@@ -372,11 +419,57 @@ export default function App() {
           siegeMultiplier: selectedItemId === 'sapper' ? 3.5 : 1.0,
           cost: def.cost,
           kills: 0,
-          facing: 0, // facing right toward enemy
+          facing: 0,
         },
       ]);
       sounds.playPlace();
     }
+  };
+
+  // Bomb Purchase & Refund
+  const handleBuyBomb = () => {
+    if (playerBudget < BOMB_CONFIG.cost || hasBomb) return;
+    setPlayerBudget(b => b - BOMB_CONFIG.cost);
+    setHasBomb(true);
+    sounds.playPlace();
+  };
+
+  const handleRefundBomb = () => {
+    if (!hasBomb) return;
+    setPlayerBudget(b => b + BOMB_CONFIG.cost);
+    setHasBomb(false);
+    sounds.playPlace();
+  };
+
+  // Bomb Targeting & Drop
+  const handleToggleBombTargeting = () => {
+    if (!hasBomb || isBombUsed) return;
+    setIsBombTargeting(prev => !prev);
+  };
+
+  const handleDropBomb = (x: number, y: number) => {
+    if (!hasBomb || isBombUsed) return;
+
+    setTacticalBomb({
+      id: 'bomb_' + Date.now(),
+      startY: -40,
+      currentY: -40,
+      targetX: x,
+      targetY: y,
+      radius: BOMB_CONFIG.radius,
+      damage: BOMB_CONFIG.damage,
+      progress: 0,
+      exploded: false,
+    });
+
+    setIsBombUsed(true);
+    setIsBombTargeting(false);
+    sounds.playCannonBlast();
+    setEventBanner({
+      message: '💣 決戦援護爆弾を投下！目標地点に着弾中！',
+      team: 'player',
+      time: Date.now(),
+    });
   };
 
   // In-battle Emergency Reinforcement Spawn
@@ -385,7 +478,6 @@ export default function App() {
     if (battleFunds < def.cost) return;
 
     setBattleFunds(b => b - def.cost);
-    // Spawn near player Honjin
     const spawnX = 140 + Math.random() * 40;
     const spawnY = FIELD_HEIGHT / 2 + (Math.random() * 120 - 60);
 
@@ -433,7 +525,6 @@ export default function App() {
 
   // Presets Application
   const handleApplyPreset = (preset: 'balanced' | 'artillery' | 'assault') => {
-    // Clear existing player items
     const baseObjectives = createInitialObjectives();
     const enemyStructures = structures.filter(s => s.team === 'enemy' && !s.isObjective);
     const enemySoldiers = soldiers.filter(s => s.team === 'enemy');
@@ -452,8 +543,8 @@ export default function App() {
         team: 'player',
         x,
         y,
-        width: 36,
-        height: 36,
+        width: 34,
+        height: 34,
         hp: def.hp!,
         maxHp: def.hp!,
         cost: def.cost,
@@ -513,21 +604,17 @@ export default function App() {
     };
 
     if (preset === 'balanced') {
-      // Front stone walls protecting Maru 1 & 2
-      for (let y = 130; y <= 240; y += 38) addPWall(360, y, 'stone_wall');
-      for (let y = FIELD_HEIGHT - 240; y <= FIELD_HEIGHT - 130; y += 38) addPWall(360, y, 'stone_wall');
-      // Turrets
+      for (let y = 140; y <= 240; y += 36) addPWall(360, y, 'stone_wall');
+      for (let y = FIELD_HEIGHT - 240; y <= FIELD_HEIGHT - 140; y += 36) addPWall(360, y, 'stone_wall');
       addPTurret(310, 110, 'arrow_tower');
       addPTurret(310, FIELD_HEIGHT - 110, 'arrow_tower');
       addPTurret(180, FIELD_HEIGHT / 2, 'cannon_battery');
-      // Army: Defense guards + Attack vanguard + Hybrid archers
       addPSoldier(330, 200, 'samurai', 'defense');
       addPSoldier(330, FIELD_HEIGHT - 200, 'samurai', 'defense');
-      addPSoldier(400, 270, 'sapper', 'attack');
-      addPSoldier(400, 370, 'cavalry', 'attack');
-      addPSoldier(280, FIELD_HEIGHT / 2 - 30, 'archer', 'hybrid');
+      addPSoldier(400, 280, 'sapper', 'attack');
+      addPSoldier(400, FIELD_HEIGHT - 280, 'cavalry', 'attack');
+      addPSoldier(280, FIELD_HEIGHT / 2 - 20, 'archer', 'hybrid');
     } else if (preset === 'artillery') {
-      // Iron walls & heavy cannon battery
       addPWall(370, 180, 'iron_wall');
       addPWall(370, FIELD_HEIGHT - 180, 'iron_wall');
       addPWall(180, FIELD_HEIGHT / 2 - 40, 'iron_wall');
@@ -539,16 +626,15 @@ export default function App() {
       addPSoldier(330, FIELD_HEIGHT - 200, 'samurai', 'defense');
       addPSoldier(360, 325, 'archer', 'hybrid');
     } else {
-      // Assault rush: Spikes + Cavalry & Sappers
-      for (let y = 150; y <= 220; y += 45) addPWall(360, y, 'spike_wall');
-      for (let y = FIELD_HEIGHT - 220; y <= FIELD_HEIGHT - 150; y += 45) addPWall(360, y, 'spike_wall');
+      for (let y = 160; y <= 230; y += 40) addPWall(360, y, 'spike_wall');
+      for (let y = FIELD_HEIGHT - 230; y <= FIELD_HEIGHT - 160; y += 40) addPWall(360, y, 'spike_wall');
       addPTurret(310, FIELD_HEIGHT / 2, 'fire_tower');
-      addPSoldier(400, 160, 'cavalry', 'attack');
-      addPSoldier(400, 230, 'cavalry', 'attack');
-      addPSoldier(400, FIELD_HEIGHT - 160, 'cavalry', 'attack');
-      addPSoldier(400, FIELD_HEIGHT - 230, 'cavalry', 'attack');
-      addPSoldier(380, 300, 'sapper', 'attack');
-      addPSoldier(380, 350, 'sapper', 'attack');
+      addPSoldier(400, 180, 'cavalry', 'attack');
+      addPSoldier(400, 240, 'cavalry', 'attack');
+      addPSoldier(400, FIELD_HEIGHT - 180, 'cavalry', 'attack');
+      addPSoldier(400, FIELD_HEIGHT - 240, 'cavalry', 'attack');
+      addPSoldier(380, 310, 'sapper', 'attack');
+      addPSoldier(380, FIELD_HEIGHT - 310, 'sapper', 'attack');
       addPSoldier(320, 200, 'archer', 'defense');
     }
 
@@ -567,6 +653,7 @@ export default function App() {
     setStructures([...baseObjectives, ...enemyStructures]);
     setSoldiers([...enemySoldiers]);
     setPlayerBudget(STARTING_BUDGET);
+    setHasBomb(false);
     sounds.playPlace();
   };
 
@@ -578,9 +665,14 @@ export default function App() {
     setPlayerBudget(STARTING_BUDGET);
     setBuildTimeLeft(BUILD_TIME_LIMIT);
     setBattleTime(0);
-    setBattleFunds(150);
+    setBattleFunds(180);
     setWinner(null);
     setSelectedSoldierId(null);
+    setHasBomb(false);
+    setIsBombUsed(false);
+    setIsBombTargeting(false);
+    setTacticalBomb(null);
+    setRespawnQueue([]);
     setProjectiles([]);
     setDamageNumbers([]);
     setParticles([]);
@@ -594,7 +686,6 @@ export default function App() {
       winner: null,
     });
 
-    // Reset base structures and generate enemy AI
     const baseObjectives = createInitialObjectives();
     const enemySetup = generateEnemySetup(nextStrategy);
     setStructures([...baseObjectives, ...enemySetup.structures]);
@@ -604,24 +695,24 @@ export default function App() {
   const selectedSoldier = soldiers.find(s => s.id === selectedSoldierId) || null;
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-3 md:p-6 select-none font-sans">
+    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center p-2 sm:p-4 select-none font-sans">
       {/* Top Application Header */}
-      <header className="w-full max-w-7xl flex flex-wrap items-center justify-between gap-3 mb-4 bg-slate-900/90 border border-slate-800 px-5 py-3 rounded-2xl shadow-xl">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-amber-600 to-red-600 flex items-center justify-center text-white shadow-md shadow-amber-900/30">
-            <Castle className="w-6 h-6" />
+      <header className="w-full max-w-7xl flex flex-wrap items-center justify-between gap-2 mb-2.5 bg-slate-900/90 border border-slate-800 px-4 py-2.5 rounded-xl shadow-lg">
+        <div className="flex items-center gap-2.5">
+          <div className="w-9 h-9 rounded-lg bg-gradient-to-tr from-amber-600 to-red-600 flex items-center justify-center text-white shadow-md shadow-amber-900/30">
+            <Castle className="w-5 h-5" />
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <h1 className="text-lg md:text-xl font-black text-amber-400 tracking-wide">
+              <h1 className="text-base sm:text-lg font-black text-amber-400 tracking-wide">
                 城塞防衛バトル
               </h1>
-              <span className="text-[11px] font-semibold bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full">
-                トップダウン2D攻城シミュレーション
+              <span className="text-[10px] font-semibold bg-amber-950 text-amber-300 border border-amber-800 px-2 py-0.5 rounded-full">
+                トップダウン2D攻城戦
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">
-              制限時間＆予算内で城壁・砲台・兵士を配備し、2つの丸を落として本陣を撃破せよ！
+            <p className="text-[11px] text-slate-400 hidden sm:block">
+              2つの丸を落として本陣攻略！兵士は15秒で復活、3分時間切れ時は城砦合計体力で判定勝ち！
             </p>
           </div>
         </div>
@@ -631,16 +722,16 @@ export default function App() {
           <button
             type="button"
             onClick={() => setIsHelpOpen(true)}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 text-slate-200 transition-colors shadow-sm"
+            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 text-slate-200 transition-colors shadow-sm"
           >
-            <HelpCircle className="w-4 h-4 text-amber-400" />
-            ルール・戦術手引き
+            <HelpCircle className="w-3.5 h-3.5 text-amber-400" />
+            ルール手引き
           </button>
 
           <button
             type="button"
             onClick={() => setIsMuted(sounds.toggleMute())}
-            className="p-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs text-slate-200 transition-colors"
+            className="p-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs text-slate-200 transition-colors"
             title={isMuted ? 'ミュート解除' : 'サウンド停止'}
           >
             {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4 text-emerald-400" />}
@@ -649,12 +740,13 @@ export default function App() {
       </header>
 
       {/* Main Game Arena Container */}
-      <main className="w-full max-w-7xl space-y-4">
-        {/* Battle HUD (Active when in battle or ended) */}
+      <main className="w-full max-w-7xl space-y-2.5">
+        {/* Battle HUD (Compact Status Bar on top of Canvas during Battle) */}
         {phase !== 'build' && (
           <BattleHUD
             structures={structures}
             soldiers={soldiers}
+            respawnQueue={respawnQueue}
             battleTime={battleTime}
             gameSpeed={gameSpeed}
             setGameSpeed={setGameSpeed}
@@ -666,6 +758,10 @@ export default function App() {
             onChangeStance={handleChangeStance}
             battleFunds={battleFunds}
             onSpawnReinforcement={handleSpawnReinforcement}
+            hasBomb={hasBomb}
+            isBombUsed={isBombUsed}
+            isBombTargeting={isBombTargeting}
+            onToggleBombTargeting={handleToggleBombTargeting}
             eventBanner={eventBanner}
           />
         )}
@@ -678,6 +774,8 @@ export default function App() {
           projectiles={projectiles}
           damageNumbers={damageNumbers}
           particles={particles}
+          respawnQueue={respawnQueue}
+          tacticalBomb={tacticalBomb}
           selectedItem={
             selectedCategory === 'wall'
               ? WALL_DEFS[selectedItemId as MaterialType]
@@ -690,8 +788,11 @@ export default function App() {
           hoverPos={hoverPos}
           setHoverPos={setHoverPos}
           onCanvasClick={handleCanvasClick}
+          onPlaceWallSegment={handlePlaceWallSegment}
           selectedSoldierId={selectedSoldierId}
           onSelectSoldier={setSelectedSoldierId}
+          isBombTargeting={isBombTargeting}
+          onDropBomb={handleDropBomb}
           gameTime={gameTimeRef.current}
         />
 
@@ -707,6 +808,9 @@ export default function App() {
             setSelectedItemId={setSelectedItemId}
             soldierStance={soldierStance}
             setSoldierStance={setSoldierStance}
+            hasBomb={hasBomb}
+            onBuyBomb={handleBuyBomb}
+            onRefundBomb={handleRefundBomb}
             onApplyPreset={handleApplyPreset}
             onClearAll={handleClearAll}
             onStartBattle={startBattle}
