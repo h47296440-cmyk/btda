@@ -114,6 +114,7 @@ export interface RespawnQueueItem {
 
 export interface TacticalBomb {
   id: string;
+  sourceTeam?: Team; // 'player' or 'enemy'
   targetX: number;
   targetY: number;
   startY: number;

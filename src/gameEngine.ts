@@ -130,156 +130,8 @@ export function createInitialObjectives(): Structure[] {
   ];
 }
 
-// Generate AI defenses and soldiers based on varied strategies
-export function generateEnemySetup(strategyIndex: number = 0): { structures: Structure[]; soldiers: Soldier[] } {
-  const structures: Structure[] = [];
-  const soldiers: Soldier[] = [];
-  let budget = STARTING_BUDGET;
-
-  const strategies = ['fortress', 'assault', 'artillery'];
-  const strategy = strategies[strategyIndex % strategies.length];
-
-  const addWall = (x: number, y: number, type: MaterialType) => {
-    const def = WALL_DEFS[type];
-    if (budget < def.cost) return;
-    budget -= def.cost;
-    structures.push({
-      id: 'enemy_wall_' + Math.random().toString(36).substring(2, 9),
-      type,
-      team: 'enemy',
-      x,
-      y,
-      width: 36,
-      height: 36,
-      hp: def.hp!,
-      maxHp: def.hp!,
-      cost: def.cost,
-      spikeDamage: type === 'spike_wall' ? 20 : 0,
-    });
-  };
-
-  const addTurret = (x: number, y: number, type: TurretType) => {
-    const def = TURRET_DEFS[type];
-    if (budget < def.cost) return;
-    budget -= def.cost;
-    structures.push({
-      id: 'enemy_turret_' + Math.random().toString(36).substring(2, 9),
-      type,
-      team: 'enemy',
-      x,
-      y,
-      width: 44,
-      height: 44,
-      hp: def.hp!,
-      maxHp: def.hp!,
-      cost: def.cost,
-      range: def.range!,
-      attackPower: def.attack!,
-      attackCooldown: type === 'fire_tower' ? 0.35 : type === 'arrow_tower' ? 1.0 : type === 'cannon_battery' ? 2.3 : 3.0,
-      lastAttackTime: 0,
-    });
-  };
-
-  const addSoldier = (x: number, y: number, type: SoldierType, stance: SoldierStance) => {
-    const def = SOLDIER_DEFS[type];
-    if (budget < def.cost) return;
-    budget -= def.cost;
-    soldiers.push({
-      id: 'enemy_sol_' + Math.random().toString(36).substring(2, 9),
-      type,
-      team: 'enemy',
-      stance,
-      x,
-      y,
-      targetX: x,
-      targetY: y,
-      hp: def.hp!,
-      maxHp: def.hp!,
-      speed: def.speed!,
-      attackPower: def.attack!,
-      attackRange: type === 'archer' ? 190 : type === 'cavalry' ? 34 : 28,
-      attackCooldown: type === 'samurai' ? 0.8 : type === 'archer' ? 1.2 : type === 'cavalry' ? 1.1 : 1.0,
-      lastAttackTime: 0,
-      targetId: null,
-      targetType: null,
-      siegeMultiplier: type === 'sapper' ? 3.5 : 1.0,
-      cost: def.cost,
-      kills: 0,
-      facing: Math.PI, // Facing left toward player
-    });
-  };
-
-  if (strategy === 'fortress') {
-    // Heavy protective walls around Maru 1 and Maru 2
-    for (let y = 130; y <= 250; y += 38) {
-      addWall(920, y, 'stone_wall');
-    }
-    for (let y = FIELD_HEIGHT - 250; y <= FIELD_HEIGHT - 130; y += 38) {
-      addWall(920, y, 'stone_wall');
-    }
-    // Honjin center defense
-    addWall(1110, FIELD_HEIGHT / 2 - 40, 'iron_wall');
-    addWall(1110, FIELD_HEIGHT / 2, 'iron_wall');
-    addWall(1110, FIELD_HEIGHT / 2 + 40, 'iron_wall');
-
-    // Turrets behind walls
-    addTurret(970, 110, 'arrow_tower');
-    addTurret(970, FIELD_HEIGHT - 110, 'arrow_tower');
-    addTurret(1150, FIELD_HEIGHT / 2 - 80, 'catapult');
-    addTurret(1150, FIELD_HEIGHT / 2 + 80, 'cannon_battery');
-
-    // Soldiers
-    addSoldier(950, 200, 'samurai', 'defense');
-    addSoldier(950, FIELD_HEIGHT - 200, 'samurai', 'defense');
-    addSoldier(1050, FIELD_HEIGHT / 2, 'archer', 'defense');
-    addSoldier(880, 280, 'sapper', 'attack');
-    addSoldier(880, 400, 'cavalry', 'attack');
-    addSoldier(900, FIELD_HEIGHT / 2, 'archer', 'hybrid');
-    addSoldier(920, 240, 'samurai', 'hybrid');
-  } else if (strategy === 'assault') {
-    // Spike & wood barricades, heavy assault army
-    for (let y = 140; y <= 240; y += 45) {
-      addWall(940, y, 'spike_wall');
-    }
-    for (let y = FIELD_HEIGHT - 240; y <= FIELD_HEIGHT - 140; y += 45) {
-      addWall(940, y, 'spike_wall');
-    }
-    addTurret(980, FIELD_HEIGHT / 2, 'fire_tower');
-    addTurret(1060, 130, 'arrow_tower');
-
-    addSoldier(880, 150, 'cavalry', 'attack');
-    addSoldier(880, 230, 'cavalry', 'attack');
-    addSoldier(880, FIELD_HEIGHT - 150, 'cavalry', 'attack');
-    addSoldier(880, FIELD_HEIGHT - 230, 'cavalry', 'attack');
-    addSoldier(850, 300, 'sapper', 'attack');
-    addSoldier(850, 380, 'sapper', 'attack');
-    addSoldier(920, 190, 'archer', 'hybrid');
-    addSoldier(920, FIELD_HEIGHT - 190, 'archer', 'hybrid');
-    addSoldier(1020, 180, 'samurai', 'defense');
-    addSoldier(1020, FIELD_HEIGHT - 180, 'samurai', 'defense');
-  } else {
-    // Artillery strategy
-    for (let y = 120; y <= 260; y += 38) {
-      addWall(930, y, 'stone_wall');
-    }
-    for (let y = FIELD_HEIGHT - 260; y <= FIELD_HEIGHT - 120; y += 38) {
-      addWall(930, y, 'stone_wall');
-    }
-    addTurret(980, 120, 'cannon_battery');
-    addTurret(980, FIELD_HEIGHT - 120, 'cannon_battery');
-    addTurret(1140, FIELD_HEIGHT / 2, 'catapult');
-    addTurret(1060, FIELD_HEIGHT / 2, 'arrow_tower');
-
-    addSoldier(950, 200, 'samurai', 'defense');
-    addSoldier(950, FIELD_HEIGHT - 200, 'samurai', 'defense');
-    addSoldier(910, 270, 'archer', 'hybrid');
-    addSoldier(910, 410, 'archer', 'hybrid');
-    addSoldier(880, 340, 'sapper', 'attack');
-    addSoldier(900, 230, 'cavalry', 'attack');
-  }
-
-  return { structures, soldiers };
-}
+// Import and re-export procedural AI Castle Builder
+export { generateEnemySetup } from './enemyAI';
 
 export function dist(x1: number, y1: number, x2: number, y2: number): number {
   return Math.hypot(x2 - x1, y2 - y1);
@@ -300,7 +152,8 @@ export function updateGameStep(
   battleElapsedSeconds: number,
   onMaruFall?: (team: Team, maruType: string) => void,
   onHonjinExposed?: (team: Team) => void,
-  onEnemyKilled?: (x: number, y: number, bounty: number) => void
+  onEnemyKilled?: (x: number, y: number, bounty: number) => void,
+  onPlayerKilled?: (x: number, y: number, bounty: number) => void
 ): {
   structures: Structure[];
   soldiers: Soldier[];
@@ -377,7 +230,7 @@ export function updateGameStep(
     }
   }
 
-  // 2. Tactical Bomb Processing
+  // 2. Tactical Bomb Processing (Supports both Player & Enemy bombs symmetrically)
   if (currentBomb && !currentBomb.exploded) {
     currentBomb.progress += 2.2 * deltaTime;
     currentBomb.currentY = currentBomb.startY + (currentBomb.targetY - currentBomb.startY) * Math.min(1, currentBomb.progress);
@@ -389,7 +242,7 @@ export function updateGameStep(
       y: currentBomb.currentY,
       vx: 0,
       vy: -1,
-      color: '#fbbf24',
+      color: currentBomb.sourceTeam === 'enemy' ? '#f43f5e' : '#fbbf24',
       size: 4,
       life: 0.3,
       maxLife: 0.3,
@@ -404,16 +257,18 @@ export function updateGameStep(
       addExplosion(currentBomb.targetX, currentBomb.targetY, '#ef4444', 28, 'debris');
       addExplosion(currentBomb.targetX, currentBomb.targetY, '#fbbf24', 20, 'spark');
 
-      // Damage all enemy soldiers within radius
+      const targetTeam: Team = currentBomb.sourceTeam === 'enemy' ? 'player' : 'enemy';
+
+      // Damage all opposing soldiers within radius
       for (const sol of soldiers) {
-        if (sol.team === 'enemy' && sol.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, sol.x, sol.y) <= BOMB_CONFIG.radius) {
+        if (sol.team === targetTeam && sol.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, sol.x, sol.y) <= BOMB_CONFIG.radius) {
           sol.hp -= BOMB_CONFIG.damage;
           addDamageFloater(sol.x, sol.y, BOMB_CONFIG.damage, '#ef4444', '爆撃直撃');
         }
       }
-      // Damage all enemy structures within radius
+      // Damage all opposing structures within radius
       for (const st of structures) {
-        if (st.team === 'enemy' && st.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, st.x, st.y) <= BOMB_CONFIG.radius) {
+        if (st.team === targetTeam && st.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, st.x, st.y) <= BOMB_CONFIG.radius) {
           if (st.isInvulnerable) {
             sounds.playShieldDeflect();
             addDamageFloater(st.x, st.y, 0, '#60a5fa', '結界防御');
@@ -630,24 +485,7 @@ export function updateGameStep(
   for (const soldier of soldiers) {
     if (soldier.hp <= 0) continue;
 
-    // Gentle separation push if soldier actually overlaps inside friendly structure (ignoring friendly walls so troops never get pushed back)
-    for (const st of structures) {
-      if (st.hp > 0 && st.team === soldier.team && !st.type.includes('wall')) {
-        const halfW = st.width / 2 + 4;
-        const halfH = st.height / 2 + 4;
-        const dx = soldier.x - st.x;
-        const dy = soldier.y - st.y;
-        if (Math.abs(dx) < halfW && Math.abs(dy) < halfH) {
-          const overlapX = halfW - Math.abs(dx);
-          const overlapY = halfH - Math.abs(dy);
-          if (overlapX < overlapY) {
-            soldier.x += (dx >= 0 ? 1 : -1) * Math.min(overlapX, 2.5);
-          } else {
-            soldier.y += (dy >= 0 ? 1 : -1) * Math.min(overlapY, 2.5);
-          }
-        }
-      }
-    }
+    // Friendly structures (walls, ninomaru, sannomaru, honjin, turrets) are completely passable without push
 
     const enemyTeam = soldier.team === 'player' ? 'enemy' : 'player';
     const isPlayer = soldier.team === 'player';
@@ -868,26 +706,15 @@ export function updateGameStep(
           }
           for (const st of structures) {
             if (st.hp <= 0 || st.id === targetId) continue;
-            // FRIENDLY WALLS: Act as castle gates/narrow passages for friendly troops so they never get trapped!
-            if (st.team === soldier.team && st.type.includes('wall')) {
+            // ALL FRIENDLY STRUCTURES: Freely passable! (二の丸三の丸本陣防壁砲台すべてすり抜け可能)
+            if (st.team === soldier.team) {
               continue;
             }
-            // ENEMY WALLS: Block opposing soldiers (they must attack/destroy or detour around them)
-            if (st.team !== soldier.team && st.type.includes('wall')) {
-              const hw = st.width / 2 + 2;
-              const hh = st.height / 2 + 2;
-              if (Math.abs(px - st.x) < hw && Math.abs(py - st.y) < hh) {
-                return st;
-              }
-            }
-            // BUILDINGS & TURRETS: Solid obstacles to navigate around
-            if (!st.type.includes('wall')) {
-              if (st.id === targetId) continue;
-              const hw = st.width / 2 + 2;
-              const hh = st.height / 2 + 2;
-              if (Math.abs(px - st.x) < hw && Math.abs(py - st.y) < hh) {
-                return st;
-              }
+            // ENEMY STRUCTURES & WALLS: Block opposing soldiers
+            const hw = st.width / 2 + 2;
+            const hh = st.height / 2 + 2;
+            if (Math.abs(px - st.x) < hw && Math.abs(py - st.y) < hh) {
+              return st;
             }
           }
           return null;
@@ -1045,6 +872,11 @@ export function updateGameStep(
         addDamageFloater(s.x, s.y - 12, KILL_BOUNTY_GOLD, '#facc15', '+金');
       } else {
         stats.soldiersKilledByEnemy++;
+        // Award Enemy CPU Gold bounty! (お金や爆弾の扱いも同じように)
+        if (onPlayerKilled) {
+          onPlayerKilled(s.x, s.y, KILL_BOUNTY_GOLD);
+        }
+        addDamageFloater(s.x, s.y - 12, KILL_BOUNTY_GOLD, '#f87171', '+敵軍金');
       }
 
       // Queue for 15-Second Respawn (やられた兵は15秒で復活)

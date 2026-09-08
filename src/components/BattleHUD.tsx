@@ -37,6 +37,11 @@ interface BattleHUDProps {
   isBombTargeting: boolean;
   onToggleBombTargeting: () => void;
   eventBanner: { message: string; team: Team; time: number } | null;
+  enemyBattleFunds?: number;
+  enemyHasBomb?: boolean;
+  enemyIsBombUsed?: boolean;
+  enemyStrategyName?: string;
+  enemyOverallStance?: SoldierStance;
 }
 
 export const BattleHUD: React.FC<BattleHUDProps> = ({
@@ -60,6 +65,11 @@ export const BattleHUD: React.FC<BattleHUDProps> = ({
   isBombTargeting,
   onToggleBombTargeting,
   eventBanner,
+  enemyBattleFunds = 0,
+  enemyHasBomb = true,
+  enemyIsBombUsed = false,
+  enemyStrategyName = '敵将陣形',
+  enemyOverallStance = 'defense',
 }) => {
   // Living player soldiers stats for command
   const livingPlayerSoldiers = soldiers.filter(s => s.team === 'player' && s.hp > 0);
@@ -243,6 +253,34 @@ export const BattleHUD: React.FC<BattleHUDProps> = ({
               <span className="text-slate-400">三の丸:</span>
               <span className={`font-mono font-bold ${(enemyMaru2?.hp || 0) > 0 ? 'text-rose-300' : 'text-slate-500'}`}>
                 {(enemyMaru2?.hp || 0) > 0 ? `${enemyMaru2?.hp}` : '破壊'}
+              </span>
+            </div>
+          </div>
+
+          {/* AI Strategy & Resource Status */}
+          <div className="flex items-center justify-between pt-1 mt-1 border-t border-slate-700/50 text-[10px]">
+            <div className="flex items-center gap-1.5 truncate max-w-[170px]">
+              <span className="text-amber-300/90 font-medium truncate" title={enemyStrategyName}>
+                ⚔️ {enemyStrategyName}
+              </span>
+              <span
+                className={`px-1 py-0.2 text-[9px] rounded font-bold ${
+                  enemyOverallStance === 'attack'
+                    ? 'bg-red-950 text-red-300 border border-red-700 animate-pulse'
+                    : enemyOverallStance === 'defense'
+                    ? 'bg-blue-950 text-blue-300 border border-blue-700'
+                    : 'bg-emerald-950 text-emerald-300 border border-emerald-700'
+                }`}
+              >
+                {enemyOverallStance === 'attack' ? '突撃中' : enemyOverallStance === 'defense' ? '防衛中' : '遊撃中'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 font-mono">
+              <span className="text-amber-400 font-bold">
+                💰 {Math.floor(enemyBattleFunds)}G
+              </span>
+              <span className={enemyIsBombUsed ? 'text-slate-500' : enemyHasBomb ? 'text-rose-400 font-bold' : 'text-slate-500'}>
+                💣 {enemyIsBombUsed ? '爆弾投下済' : enemyHasBomb ? '爆弾装填中' : '爆弾なし'}
               </span>
             </div>
           </div>

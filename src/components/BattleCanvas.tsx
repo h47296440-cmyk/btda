@@ -573,18 +573,36 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
     // 5. Draw Tactical Bomb (Falling Airstrike Animation)
     if (tacticalBomb && !tacticalBomb.exploded) {
       ctx.save();
+      const isEnemyBomb = tacticalBomb.sourceTeam === 'enemy';
       // Target Reticle on the ground
       const pulse = (Math.sin(gameTime * 10) + 1) / 2;
-      ctx.strokeStyle = `rgba(239, 68, 68, ${0.6 + pulse * 0.4})`;
+      const strokeColor = isEnemyBomb
+        ? `rgba(225, 29, 72, ${0.7 + pulse * 0.3})`
+        : `rgba(245, 158, 11, ${0.7 + pulse * 0.3})`;
+      const fillColor = isEnemyBomb
+        ? 'rgba(225, 29, 72, 0.25)'
+        : 'rgba(245, 158, 11, 0.25)';
+
+      ctx.strokeStyle = strokeColor;
       ctx.lineWidth = 3;
       ctx.beginPath();
       ctx.arc(tacticalBomb.targetX, tacticalBomb.targetY, BOMB_CONFIG.radius, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.2)';
+      ctx.fillStyle = fillColor;
       ctx.beginPath();
       ctx.arc(tacticalBomb.targetX, tacticalBomb.targetY, BOMB_CONFIG.radius, 0, Math.PI * 2);
       ctx.fill();
+
+      // Label above reticle
+      ctx.font = 'bold 12px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = isEnemyBomb ? '#f43f5e' : '#fbbf24';
+      ctx.fillText(
+        isEnemyBomb ? '⚠️ 敵軍空爆接近！' : '💣 味方支援爆撃！',
+        tacticalBomb.targetX,
+        tacticalBomb.targetY - BOMB_CONFIG.radius - 8
+      );
 
       // Bomb shadow growing as it approaches
       const shadowSize = 10 + 20 * tacticalBomb.progress;
@@ -595,15 +613,15 @@ export const BattleCanvas: React.FC<BattleCanvasProps> = ({
 
       // Falling missile / bomb
       ctx.translate(tacticalBomb.targetX, tacticalBomb.currentY);
-      ctx.fillStyle = '#0f172a';
+      ctx.fillStyle = isEnemyBomb ? '#881337' : '#0f172a';
       ctx.beginPath();
       ctx.roundRect(-8, -20, 16, 32, 6);
       ctx.fill();
       // Fin
-      ctx.fillStyle = '#dc2626';
+      ctx.fillStyle = isEnemyBomb ? '#e11d48' : '#dc2626';
       ctx.fillRect(-12, -22, 24, 6);
       // Flame trail
-      ctx.fillStyle = '#f97316';
+      ctx.fillStyle = isEnemyBomb ? '#fb7185' : '#f97316';
       ctx.beginPath();
       ctx.arc(0, -26, 6 + Math.random() * 4, 0, Math.PI * 2);
       ctx.fill();

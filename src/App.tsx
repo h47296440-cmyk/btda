@@ -39,6 +39,11 @@ import {
   generateEnemySetup,
   updateGameStep,
 } from './gameEngine';
+import {
+  evaluateEnemyTacticalBomb,
+  evaluateEnemyReinforcements,
+  evaluateEnemyTacticalStance,
+} from './enemyAI';
 import { sounds } from './audio';
 import { BattleCanvas } from './components/BattleCanvas';
 import { BuildPanel } from './components/BuildPanel';
@@ -58,11 +63,20 @@ export default function App() {
   const [particles, setParticles] = useState<Particle[]>([]);
   const [respawnQueue, setRespawnQueue] = useState<RespawnQueueItem[]>([]);
 
-  // Special Weapon: Tactical Bomb
+  // Special Weapon: Tactical Bomb (Player & Enemy)
   const [tacticalBomb, setTacticalBomb] = useState<TacticalBomb | null>(null);
   const [hasBomb, setHasBomb] = useState<boolean>(false);
   const [isBombUsed, setIsBombUsed] = useState<boolean>(false);
   const [isBombTargeting, setIsBombTargeting] = useState<boolean>(false);
+
+  // Enemy CPU Parity: Budget, Bomb, and Strategy
+  const [enemyBattleFunds, setEnemyBattleFunds] = useState<number>(180);
+  const [enemyHasBomb, setEnemyHasBomb] = useState<boolean>(true);
+  const [enemyIsBombUsed, setEnemyIsBombUsed] = useState<boolean>(false);
+  const [enemyStrategyName, setEnemyStrategyName] = useState<string>('剛柔兼備・名将陣');
+  const [enemyOverallStance, setEnemyOverallStance] = useState<SoldierStance>('defense');
+  const lastEnemyReinforceTimeRef = useRef<number>(0);
+  const lastEnemyTacticalCheckRef = useRef<number>(0);
 
   // Economics & Preparation
   const [playerBudget, setPlayerBudget] = useState<number>(STARTING_BUDGET);
@@ -106,7 +120,7 @@ export default function App() {
 
   // Initialize Enemy AI Setup at start
   const initEnemy = useCallback((strategyIdx: number) => {
-    const enemySetup = generateEnemySetup(strategyIdx);
+    const enemySetup = generateEnemySetup(STARTING_BUDGET, strategyIdx);
     setStructures(prev => {
       const baseObjectives = createInitialObjectives();
       const playerPlaced = prev.filter(s => s.team === 'player' && !s.isObjective);
@@ -116,6 +130,13 @@ export default function App() {
       const playerSoldiers = prev.filter(s => s.team === 'player');
       return [...playerSoldiers, ...enemySetup.soldiers];
     });
+    setEnemyBattleFunds(Math.max(180, enemySetup.remainingFunds + 180));
+    setEnemyHasBomb(enemySetup.hasBomb);
+    setEnemyIsBombUsed(false);
+    setEnemyStrategyName(enemySetup.strategyName);
+    setEnemyOverallStance('defense');
+    lastEnemyReinforceTimeRef.current = 0;
+    lastEnemyTacticalCheckRef.current = 0;
   }, []);
 
   // Initialize match on first mount
@@ -173,6 +194,121 @@ export default function App() {
 
           // Passive battle funds generation (+3 Gold/s)
           setBattleFunds(f => Math.min(800, f + 3 * dt));
+          // AI Passive battle funds generation (+3 Gold/s)
+          setEnemyBattleFunds(f => Math.min(800, f + 3 * dt));
+
+          // 1. Check if Enemy CPU triggers Tactical Bomb
+          if (enemyHasBomb && !enemyIsBombUsed && !tacticalBomb) {
+            const bombTarget = evaluateEnemyTacticalBomb(
+              soldiers,
+              structures,
+              enemyHasBomb,
+              enemyIsBombUsed,
+              newTime
+            );
+            if (bombTarget) {
+              setEnemyIsBombUsed(true);
+              setTacticalBomb({
+                id: 'enemy_bomb_' + Date.now(),
+                sourceTeam: 'enemy',
+                targetX: bombTarget.targetX,
+                targetY: bombTarget.targetY,
+                startY: -80,
+                currentY: -80,
+                progress: 0,
+                exploded: false,
+              });
+              sounds.playWarHorn();
+              setEventBanner({
+                message: `⚠️ 敵軍が戦術爆弾を投下しました！直ちに退避せよ！`,
+                team: 'enemy',
+                time: Date.now(),
+              });
+            }
+          }
+
+          // 2. Check if Enemy CPU spawns Reinforcements
+          const enemySpawn = evaluateEnemyReinforcements(
+            enemyBattleFunds,
+            soldiers,
+            structures,
+            gameTimeRef.current,
+            lastEnemyReinforceTimeRef.current
+          );
+          if (enemySpawn) {
+            lastEnemyReinforceTimeRef.current = gameTimeRef.current;
+            setEnemyBattleFunds(f => Math.max(0, f - enemySpawn.cost));
+            const spawnX = FIELD_WIDTH - (140 + Math.random() * 40);
+            const spawnY = FIELD_HEIGHT / 2 + (Math.random() * 120 - 60);
+            const def = SOLDIER_DEFS[enemySpawn.type];
+            setSoldiers(prev => [
+              ...prev,
+              {
+                id: 'enemy_reinforce_' + Math.random().toString(36).substring(2, 9),
+                type: enemySpawn.type,
+                team: 'enemy',
+                stance: enemySpawn.stance,
+                x: spawnX,
+                y: spawnY,
+                targetX: spawnX,
+                targetY: spawnY,
+                hp: def.hp!,
+                maxHp: def.hp!,
+                speed: def.speed!,
+                attackPower: def.attack!,
+                attackRange: enemySpawn.type === 'archer' ? 190 : enemySpawn.type === 'cavalry' ? 34 : 28,
+                attackCooldown:
+                  enemySpawn.type === 'samurai'
+                    ? 0.8
+                    : enemySpawn.type === 'archer'
+                    ? 1.2
+                    : enemySpawn.type === 'cavalry'
+                    ? 1.1
+                    : 1.0,
+                lastAttackTime: 0,
+                targetId: null,
+                targetType: null,
+                siegeMultiplier: enemySpawn.type === 'sapper' ? 3.5 : 1.0,
+                cost: def.cost,
+                kills: 0,
+                facing: Math.PI,
+              },
+            ]);
+            setEventBanner({
+              message: enemySpawn.message,
+              team: 'enemy',
+              time: Date.now(),
+            });
+          }
+
+          // 3. Dynamic Enemy Tactical Stance Evaluation (every ~3.5 seconds)
+          if (gameTimeRef.current - lastEnemyTacticalCheckRef.current >= 3.5) {
+            lastEnemyTacticalCheckRef.current = gameTimeRef.current;
+            const tacticalCommand = evaluateEnemyTacticalStance(
+              soldiers,
+              structures,
+              enemyOverallStance,
+              newTime
+            );
+            if (tacticalCommand) {
+              setEnemyOverallStance(tacticalCommand.overallStance);
+              setSoldiers(prev =>
+                prev.map(s => {
+                  if (s.team !== 'enemy') return s;
+                  const matched = tacticalCommand.newStances.find(n => n.id === s.id);
+                  return matched ? { ...s, stance: matched.stance } : s;
+                })
+              );
+              if (tacticalCommand.bannerMessage) {
+                setEventBanner({
+                  message: tacticalCommand.bannerMessage,
+                  team: 'enemy',
+                  time: Date.now(),
+                });
+                sounds.playWarHorn();
+              }
+            }
+          }
 
           setStructures(prevStructs => {
             setSoldiers(prevSoldiers => {
@@ -215,6 +351,10 @@ export default function App() {
                 // Callback when enemy soldier killed: award player gold bounty!
                 (_x, _y, bounty) => {
                   setBattleFunds(f => Math.min(800, f + bounty));
+                },
+                // Callback when player soldier killed: award enemy CPU gold bounty!
+                (_x, _y, bounty) => {
+                  setEnemyBattleFunds(f => Math.min(800, f + bounty));
                 }
               );
 
@@ -734,9 +874,16 @@ export default function App() {
     });
 
     const baseObjectives = createInitialObjectives();
-    const enemySetup = generateEnemySetup(nextStrategy);
+    const enemySetup = generateEnemySetup(STARTING_BUDGET, nextStrategy);
     setStructures([...baseObjectives, ...enemySetup.structures]);
     setSoldiers(enemySetup.soldiers);
+    setEnemyBattleFunds(Math.max(180, enemySetup.remainingFunds + 180));
+    setEnemyHasBomb(enemySetup.hasBomb);
+    setEnemyIsBombUsed(false);
+    setEnemyStrategyName(enemySetup.strategyName);
+    setEnemyOverallStance('defense');
+    lastEnemyReinforceTimeRef.current = 0;
+    lastEnemyTacticalCheckRef.current = 0;
   };
 
   const selectedSoldier = soldiers.find(s => s.id === selectedSoldierId) || null;
@@ -811,6 +958,11 @@ export default function App() {
             isBombTargeting={isBombTargeting}
             onToggleBombTargeting={handleToggleBombTargeting}
             eventBanner={eventBanner}
+            enemyBattleFunds={enemyBattleFunds}
+            enemyHasBomb={enemyHasBomb}
+            enemyIsBombUsed={enemyIsBombUsed}
+            enemyStrategyName={enemyStrategyName}
+            enemyOverallStance={enemyOverallStance}
           />
         )}
 
