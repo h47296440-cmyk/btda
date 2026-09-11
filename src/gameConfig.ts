@@ -1,5 +1,336 @@
-import { MaterialType, TurretType, SoldierType, SoldierStance } from './types';
+import {
+  MaterialType,
+  TurretType,
+  SoldierType,
+  SoldierStance,
+  GameMode,
+  NationConfig,
+  TerrainZone,
+} from './types';
 
+export interface GameModeConfig {
+  id: GameMode;
+  name: string;
+  tag: string;
+  description: string;
+  fieldWidth: number;
+  fieldHeight: number;
+  buildTimeLimit: number;
+  battleTimeLimit: number;
+  startingBudget: number;
+  nations: NationConfig[];
+  terrainZones: TerrainZone[];
+}
+
+export const GAME_MODES: Record<GameMode, GameModeConfig> = {
+  '2_nations': {
+    id: '2_nations',
+    name: '2ヶ国 一騎当千戦',
+    tag: '通常決戦',
+    description: '東西両雄が激突する基本モード。二の丸・三の丸を突破して本陣を討ち取れ。',
+    fieldWidth: 1300,
+    fieldHeight: 680,
+    buildTimeLimit: 60,
+    battleTimeLimit: 180,
+    startingBudget: 2600,
+    nations: [
+      {
+        id: 'player',
+        name: '蒼龍軍 (自軍)',
+        leader: '武将 (プレイヤー)',
+        color: '#3b82f6',
+        accentColor: '#60a5fa',
+        kanji: '蒼',
+        isPlayer: true,
+        buildZone: { minX: 30, maxX: 550, minY: 30, maxY: 650 },
+        basePos: {
+          honjin: { x: 160, y: 340 },
+          maru1: { x: 320, y: 190 },
+          maru2: { x: 320, y: 490 },
+        },
+      },
+      {
+        id: 'enemy',
+        name: '紅蓮軍 (CPU)',
+        leader: '赤備えの智将',
+        color: '#ef4444',
+        accentColor: '#f87171',
+        kanji: '紅',
+        isPlayer: false,
+        buildZone: { minX: 750, maxX: 1270, minY: 30, maxY: 650 },
+        basePos: {
+          honjin: { x: 1140, y: 340 },
+          maru1: { x: 980, y: 190 },
+          maru2: { x: 980, y: 490 },
+        },
+      },
+    ],
+    terrainZones: [],
+  },
+  '4_nations': {
+    id: '4_nations',
+    name: '4ヶ国 四国大乱戦',
+    tag: '広域合戦',
+    description: '戦場が1800x1100へ大幅拡大！東西南北の4大国が四つ巴の激戦を繰り広げる。建築制限110秒・合戦制限6分！',
+    fieldWidth: 1800,
+    fieldHeight: 1100,
+    buildTimeLimit: 110,
+    battleTimeLimit: 360,
+    startingBudget: 3400,
+    nations: [
+      {
+        id: 'player',
+        name: '蒼龍軍 (自軍・西南)',
+        leader: '武将 (プレイヤー)',
+        color: '#3b82f6',
+        accentColor: '#60a5fa',
+        kanji: '蒼',
+        isPlayer: true,
+        buildZone: { minX: 40, maxX: 580, minY: 560, maxY: 1060 },
+        basePos: {
+          honjin: { x: 170, y: 930 },
+          maru1: { x: 340, y: 780 },
+          maru2: { x: 450, y: 950 },
+        },
+      },
+      {
+        id: 'enemy_1',
+        name: '紅蓮軍 (CPU・東北)',
+        leader: '北条相模守',
+        color: '#ef4444',
+        accentColor: '#f87171',
+        kanji: '紅',
+        isPlayer: false,
+        buildZone: { minX: 1220, maxX: 1760, minY: 40, maxY: 540 },
+        basePos: {
+          honjin: { x: 1630, y: 170 },
+          maru1: { x: 1460, y: 320 },
+          maru2: { x: 1350, y: 150 },
+        },
+      },
+      {
+        id: 'enemy_2',
+        name: '翠風軍 (CPU・西北)',
+        leader: '上杉越後守',
+        color: '#10b981',
+        accentColor: '#34d399',
+        kanji: '翠',
+        isPlayer: false,
+        buildZone: { minX: 40, maxX: 580, minY: 40, maxY: 540 },
+        basePos: {
+          honjin: { x: 170, y: 170 },
+          maru1: { x: 340, y: 320 },
+          maru2: { x: 450, y: 150 },
+        },
+      },
+      {
+        id: 'enemy_3',
+        name: '紫電軍 (CPU・東南)',
+        leader: '武田甲斐守',
+        color: '#8b5cf6',
+        accentColor: '#a78bfa',
+        kanji: '紫',
+        isPlayer: false,
+        buildZone: { minX: 1220, maxX: 1760, minY: 560, maxY: 1060 },
+        basePos: {
+          honjin: { x: 1630, y: 930 },
+          maru1: { x: 1460, y: 780 },
+          maru2: { x: 1350, y: 950 },
+        },
+      },
+    ],
+    terrainZones: [],
+  },
+  '8_nations': {
+    id: '8_nations',
+    name: '8ヶ国 天下争覇戦',
+    tag: '超巨大戦場・地形ギミック',
+    description: '2400x1400の超広大な戦場に8ヶ国が集結！足が遅くなる「沼地」や滑りやすくなる「氷原」が出現。建築160秒・合戦9分！',
+    fieldWidth: 2400,
+    fieldHeight: 1400,
+    buildTimeLimit: 160,
+    battleTimeLimit: 540,
+    startingBudget: 4200,
+    nations: [
+      {
+        id: 'player',
+        name: '蒼龍軍 (自軍・西南)',
+        leader: '武将 (プレイヤー)',
+        color: '#3b82f6',
+        accentColor: '#60a5fa',
+        kanji: '蒼',
+        isPlayer: true,
+        buildZone: { minX: 40, maxX: 520, minY: 800, maxY: 1360 },
+        basePos: {
+          honjin: { x: 160, y: 1240 },
+          maru1: { x: 330, y: 1080 },
+          maru2: { x: 440, y: 1260 },
+        },
+      },
+      {
+        id: 'enemy_1',
+        name: '紅蓮軍 (CPU・東北)',
+        leader: '真田安房守',
+        color: '#ef4444',
+        accentColor: '#f87171',
+        kanji: '紅',
+        isPlayer: false,
+        buildZone: { minX: 1880, maxX: 2360, minY: 40, maxY: 600 },
+        basePos: {
+          honjin: { x: 2240, y: 160 },
+          maru1: { x: 2070, y: 320 },
+          maru2: { x: 1960, y: 140 },
+        },
+      },
+      {
+        id: 'enemy_2',
+        name: '翠風軍 (CPU・北中西)',
+        leader: '上杉弾正少弼',
+        color: '#10b981',
+        accentColor: '#34d399',
+        kanji: '翠',
+        isPlayer: false,
+        buildZone: { minX: 680, maxX: 1140, minY: 40, maxY: 500 },
+        basePos: {
+          honjin: { x: 910, y: 150 },
+          maru1: { x: 770, y: 320 },
+          maru2: { x: 1050, y: 320 },
+        },
+      },
+      {
+        id: 'enemy_3',
+        name: '紫電軍 (CPU・北中東)',
+        leader: '武田大膳大夫',
+        color: '#8b5cf6',
+        accentColor: '#a78bfa',
+        kanji: '紫',
+        isPlayer: false,
+        buildZone: { minX: 1260, maxX: 1720, minY: 40, maxY: 500 },
+        basePos: {
+          honjin: { x: 1490, y: 150 },
+          maru1: { x: 1350, y: 320 },
+          maru2: { x: 1630, y: 320 },
+        },
+      },
+      {
+        id: 'enemy_4',
+        name: '焔火軍 (CPU・東南)',
+        leader: '島津薩摩守',
+        color: '#f97316',
+        accentColor: '#fb923c',
+        kanji: '焔',
+        isPlayer: false,
+        buildZone: { minX: 1880, maxX: 2360, minY: 800, maxY: 1360 },
+        basePos: {
+          honjin: { x: 2240, y: 1240 },
+          maru1: { x: 2070, y: 1080 },
+          maru2: { x: 1960, y: 1260 },
+        },
+      },
+      {
+        id: 'enemy_5',
+        name: '桜花軍 (CPU・南中東)',
+        leader: '前田加賀守',
+        color: '#ec4899',
+        accentColor: '#f472b6',
+        kanji: '桜',
+        isPlayer: false,
+        buildZone: { minX: 1260, maxX: 1720, minY: 900, maxY: 1360 },
+        basePos: {
+          honjin: { x: 1490, y: 1250 },
+          maru1: { x: 1350, y: 1080 },
+          maru2: { x: 1630, y: 1080 },
+        },
+      },
+      {
+        id: 'enemy_6',
+        name: '黄金軍 (CPU・南中西)',
+        leader: '織田右大臣',
+        color: '#eab308',
+        accentColor: '#facc15',
+        kanji: '金',
+        isPlayer: false,
+        buildZone: { minX: 680, maxX: 1140, minY: 900, maxY: 1360 },
+        basePos: {
+          honjin: { x: 910, y: 1250 },
+          maru1: { x: 770, y: 1080 },
+          maru2: { x: 1050, y: 1080 },
+        },
+      },
+      {
+        id: 'enemy_7',
+        name: '墨夜軍 (CPU・西北)',
+        leader: '伊達陸奥守',
+        color: '#64748b',
+        accentColor: '#94a3b8',
+        kanji: '墨',
+        isPlayer: false,
+        buildZone: { minX: 40, maxX: 520, minY: 40, maxY: 600 },
+        basePos: {
+          honjin: { x: 160, y: 160 },
+          maru1: { x: 330, y: 320 },
+          maru2: { x: 440, y: 140 },
+        },
+      },
+    ],
+    terrainZones: [
+      // 沼地 (Swamps: Foot speed slows significantly to 0.42x)
+      {
+        id: 'swamp_west',
+        type: 'swamp',
+        name: '泥濘の毒沼 (西)',
+        x: 540,
+        y: 560,
+        width: 250,
+        height: 280,
+        color: '#1a2e16',
+      },
+      {
+        id: 'swamp_east',
+        type: 'swamp',
+        name: '底なし沼 (東)',
+        x: 1610,
+        y: 560,
+        width: 250,
+        height: 280,
+        color: '#1a2e16',
+      },
+      // 氷原 (Ice: Slippery rapid gliding at 1.55x speed)
+      {
+        id: 'ice_north',
+        type: 'ice',
+        name: '凍結大湖 (北)',
+        x: 1020,
+        y: 440,
+        width: 360,
+        height: 180,
+        color: '#083344',
+      },
+      {
+        id: 'ice_south',
+        type: 'ice',
+        name: '白銀の氷原 (南)',
+        x: 1020,
+        y: 780,
+        width: 360,
+        height: 180,
+        color: '#083344',
+      },
+      {
+        id: 'ice_center',
+        type: 'ice',
+        name: '天王山・中央氷裂',
+        x: 1080,
+        y: 650,
+        width: 240,
+        height: 100,
+        color: '#0e7490',
+      },
+    ],
+  },
+};
+
+// Default backwards-compatible constants
 export const FIELD_WIDTH = 1300;
 export const FIELD_HEIGHT = 680;
 
@@ -18,7 +349,7 @@ export const ENEMY_BUILD_ZONE = {
 };
 
 export const STARTING_BUDGET = 2600; // 予算増加 (1800 -> 2600)
-export const BUILD_TIME_LIMIT = 50; // seconds
+export const BUILD_TIME_LIMIT = 60; // seconds
 export const BATTLE_TIME_LIMIT = 180; // 3分制限時間 (180秒)
 export const SOLDIER_RESPAWN_SECONDS = 15; // やられた兵は15秒で復活
 export const KILL_BOUNTY_GOLD = 45; // 相手の兵を倒すと予算獲得
@@ -43,7 +374,10 @@ export interface ItemDef {
   attack?: number;
   speed?: number;
   details: string;
+  color?: string;
 }
+
+export type BuildOption = ItemDef;
 
 export const WALL_DEFS: Record<MaterialType, ItemDef> = {
   wood_wall: {
@@ -54,6 +388,7 @@ export const WALL_DEFS: Record<MaterialType, ItemDef> = {
     iconName: 'Fence',
     category: 'wall',
     hp: 350,
+    color: '#a16207',
     details: '耐久力: 350 | 低コスト防壁',
   },
   stone_wall: {
@@ -64,6 +399,7 @@ export const WALL_DEFS: Record<MaterialType, ItemDef> = {
     iconName: 'Shield',
     category: 'wall',
     hp: 900,
+    color: '#64748b',
     details: '耐久力: 900 | 標準防壁',
   },
   iron_wall: {
@@ -74,6 +410,7 @@ export const WALL_DEFS: Record<MaterialType, ItemDef> = {
     iconName: 'Landmark',
     category: 'wall',
     hp: 1800,
+    color: '#334155',
     details: '耐久力: 1800 | 鉄壁防御',
   },
   spike_wall: {
@@ -84,6 +421,7 @@ export const WALL_DEFS: Record<MaterialType, ItemDef> = {
     iconName: 'AlertTriangle',
     category: 'wall',
     hp: 550,
+    color: '#854d0e',
     details: '耐久力: 550 | 反撃ダメージ 20',
   },
 };

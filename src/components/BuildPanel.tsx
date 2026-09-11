@@ -5,8 +5,9 @@ import {
   SOLDIER_DEFS,
   STANCE_INFO,
   BOMB_CONFIG,
+  GAME_MODES,
 } from '../gameConfig';
-import { SoldierStance, Soldier } from '../types';
+import { SoldierStance, Soldier, GameMode } from '../types';
 import {
   Shield,
   Crosshair,
@@ -19,6 +20,8 @@ import {
   Bomb,
   Check,
   Zap,
+  Globe,
+  Hammer,
 } from 'lucide-react';
 
 interface BuildPanelProps {
@@ -39,6 +42,9 @@ interface BuildPanelProps {
   onStartBattle: () => void;
   soldiers?: Soldier[];
   onChangeAllStances?: (newStance: SoldierStance) => void;
+  gameMode?: GameMode;
+  onChangeGameMode?: (mode: GameMode) => void;
+  cpuBuildProgress?: number; // 0 to 100
 }
 
 export const BuildPanel: React.FC<BuildPanelProps> = ({
@@ -59,13 +65,52 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
   onStartBattle,
   soldiers = [],
   onChangeAllStances,
+  gameMode = '2_nations',
+  onChangeGameMode,
+  cpuBuildProgress = 50,
 }) => {
   const playerSoldiers = soldiers.filter(s => s.team === 'player');
   const attackCount = playerSoldiers.filter(s => s.stance === 'attack').length;
   const defenseCount = playerSoldiers.filter(s => s.stance === 'defense').length;
   const hybridCount = playerSoldiers.filter(s => s.stance === 'hybrid').length;
+
   return (
     <div className="bg-slate-900 border border-slate-700/80 rounded-xl p-3 sm:p-4 shadow-xl space-y-3.5 text-slate-100">
+      {/* MODE SELECTOR HEADER */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 border-b border-slate-800">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-amber-400">
+          <Globe className="w-4 h-4 text-amber-400" />
+          <span>合戦規模・参加国数選択:</span>
+        </div>
+
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {(
+            [
+              { id: '2_nations', label: '🏯 2国決戦', desc: '通常' },
+              { id: '4_nations', label: '⚔️ 4国大戦', desc: '敷地拡大・時間増' },
+              { id: '8_nations', label: '🌐 8国天下統一', desc: '超大型・沼地＆氷原' },
+            ] as const
+          ).map(m => {
+            const isSel = gameMode === m.id;
+            return (
+              <button
+                key={m.id}
+                type="button"
+                onClick={() => onChangeGameMode && onChangeGameMode(m.id)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold border transition-all ${
+                  isSel
+                    ? 'bg-amber-600 text-white border-amber-300 shadow-md shadow-amber-600/30'
+                    : 'bg-slate-800/80 hover:bg-slate-700 text-slate-300 border-slate-700'
+                }`}
+              >
+                <span>{m.label}</span>
+                <span className="ml-1 text-[10px] opacity-75 font-normal">({m.desc})</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
       {/* Top Header: Budget, Timer, and Actions */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 pb-3">
         {/* Budget & Bomb Slot */}
@@ -123,305 +168,263 @@ export const BuildPanel: React.FC<BuildPanelProps> = ({
           </div>
         </div>
 
-        {/* Countdown Timer & Start */}
-        <div className="flex items-center gap-2 flex-wrap ml-auto">
-          <div className="flex items-center space-x-2 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
-            <Clock className={`w-4 h-4 ${timeLeft <= 10 ? 'text-red-400 animate-pulse' : 'text-blue-400'}`} />
-            <div>
-              <div className="text-[10px] text-slate-400">築城制限時間</div>
-              <div className={`text-base font-bold font-mono ${timeLeft <= 10 ? 'text-red-400' : 'text-slate-100'}`}>
-                00:{timeLeft < 10 ? `0${timeLeft}` : timeLeft}
-              </div>
+        {/* Timer & Start Battle Action */}
+        <div className="flex items-center space-x-3">
+          <div className="flex items-center space-x-1.5 bg-slate-800/80 px-3 py-1.5 rounded-lg border border-slate-700">
+            <Clock className="w-4 h-4 text-blue-400" />
+            <div className="text-xs text-slate-400">建築制限時間:</div>
+            <div className={`font-mono font-bold text-sm ${timeLeft <= 10 ? 'text-red-400 animate-pulse' : 'text-slate-200'}`}>
+              {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, '0')}
             </div>
           </div>
-
-          <div className="dropdown relative group">
-            <button
-              type="button"
-              className="px-2.5 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-600 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors text-slate-200"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              おすすめ配置
-            </button>
-            <div className="absolute right-0 top-full mt-1 hidden group-hover:block w-48 bg-slate-800 border border-slate-700 rounded-lg shadow-xl py-1 z-30">
-              <button
-                type="button"
-                onClick={() => onApplyPreset('balanced')}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-slate-700 text-slate-200"
-              >
-                🏯 バランス要塞 (石垣+矢倉+兵士)
-              </button>
-              <button
-                type="button"
-                onClick={() => onApplyPreset('artillery')}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-slate-700 text-slate-200"
-              >
-                💣 大砲鉄壁型 (大筒+鉄壁防備)
-              </button>
-              <button
-                type="button"
-                onClick={() => onApplyPreset('assault')}
-                className="w-full text-left px-3 py-2 text-xs hover:bg-slate-700 text-slate-200"
-              >
-                ⚡ 電撃突撃隊 (騎馬+破城兵速攻)
-              </button>
-            </div>
-          </div>
-
-          <button
-            type="button"
-            onClick={onClearAll}
-            className="px-2.5 py-2 bg-slate-800/80 hover:bg-red-950/60 border border-slate-700 hover:border-red-600 rounded-lg text-xs text-slate-300 hover:text-red-300 font-medium flex items-center gap-1 transition-colors"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            全撤去
-          </button>
 
           <button
             type="button"
             onClick={onStartBattle}
-            className="px-4 py-2 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 font-bold text-white rounded-lg shadow-lg shadow-red-900/30 flex items-center gap-1.5 transition-all transform hover:scale-105 active:scale-95 text-xs sm:text-sm"
+            className="flex items-center space-x-2 bg-gradient-to-r from-red-600 to-amber-600 hover:from-red-500 hover:to-amber-500 text-white font-bold py-2 px-5 rounded-lg shadow-lg hover:shadow-red-500/20 transition-all border border-amber-400/50"
           >
             <Swords className="w-4 h-4" />
-            出陣！合戦開始
+            <span>合戦開始！</span>
           </button>
         </div>
       </div>
 
-      {/* Main Category Tabs */}
-      <div className="grid grid-cols-3 gap-2">
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedCategory('wall');
-            setSelectedItemId('wood_wall');
-          }}
-          className={`py-2 px-2 rounded-lg font-semibold text-xs md:text-sm flex items-center justify-center gap-1.5 transition-colors border ${
-            selectedCategory === 'wall'
-              ? 'bg-amber-600/30 text-amber-300 border-amber-500'
-              : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300 border-slate-700'
-          }`}
-        >
-          <Shield className="w-4 h-4 text-amber-400" />
-          <span>防壁素材 <span className="text-[10px] text-amber-300 font-normal">✍️なぞり可</span></span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedCategory('turret');
-            setSelectedItemId('arrow_tower');
-          }}
-          className={`py-2 px-2 rounded-lg font-semibold text-xs md:text-sm flex items-center justify-center gap-1.5 transition-colors border ${
-            selectedCategory === 'turret'
-              ? 'bg-blue-600/30 text-blue-300 border-blue-500'
-              : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300 border-slate-700'
-          }`}
-        >
-          <Crosshair className="w-4 h-4 text-blue-400" />
-          <span>迎撃砲台 <span className="text-[10px] text-blue-300 font-normal">👆1クリック</span></span>
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedCategory('soldier');
-            setSelectedItemId('samurai');
-          }}
-          className={`py-2 px-2 rounded-lg font-semibold text-xs md:text-sm flex items-center justify-center gap-1.5 transition-colors border ${
-            selectedCategory === 'soldier'
-              ? 'bg-emerald-600/30 text-emerald-300 border-emerald-500'
-              : 'bg-slate-800/50 hover:bg-slate-800 text-slate-300 border-slate-700'
-          }`}
-        >
-          <Users className="w-4 h-4 text-emerald-400" />
-          <span>出撃兵士 <span className="text-[10px] text-emerald-300 font-normal">👆1クリック</span></span>
-        </button>
+      {/* DYNAMIC CPU BUILDING PROGRESS DISPLAY */}
+      <div className="bg-slate-800/60 border border-slate-700/70 rounded-lg p-2.5">
+        <div className="flex items-center justify-between text-xs mb-1">
+          <div className="flex items-center gap-1.5 font-bold text-amber-300">
+            <Hammer className="w-3.5 h-3.5 text-amber-400 animate-bounce" />
+            <span>敵国CPU築城リアルタイム進行中:</span>
+          </div>
+          <span className="font-mono text-xs font-bold text-amber-400">{Math.round(cpuBuildProgress)}% 完了</span>
+        </div>
+        <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden border border-slate-700">
+          <div
+            className="h-full bg-gradient-to-r from-amber-600 to-red-500 transition-all duration-300"
+            style={{ width: `${Math.min(100, Math.max(5, cpuBuildProgress))}%` }}
+          />
+        </div>
+        <div className="text-[10px] text-slate-400 mt-1 flex items-center justify-between">
+          <span>※ CPUも予算・兵科・城壁を計算してリアルタイム建造しています</span>
+          <span className="text-amber-300/80 font-medium">早く築城を完了しても「合戦開始」ですぐ完成表示されます</span>
+        </div>
       </div>
 
-      {/* Category Items List */}
+      {/* Category Tabs: Walls, Turrets, Soldiers */}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex bg-slate-800 p-1 rounded-lg border border-slate-700">
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedCategory('wall');
+              setSelectedItemId('wood_wall');
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+              selectedCategory === 'wall'
+                ? 'bg-blue-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>防壁・城壁</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedCategory('turret');
+              setSelectedItemId('arrow_tower');
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+              selectedCategory === 'turret'
+                ? 'bg-blue-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Crosshair className="w-3.5 h-3.5" />
+            <span>迎撃砲台・櫓</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setSelectedCategory('soldier');
+              setSelectedItemId('samurai');
+            }}
+            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold transition-colors ${
+              selectedCategory === 'soldier'
+                ? 'bg-blue-600 text-white shadow'
+                : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Users className="w-3.5 h-3.5" />
+            <span>守備兵・武士団</span>
+          </button>
+        </div>
+
+        {/* Presets & Reset */}
+        <div className="flex items-center space-x-1.5">
+          <button
+            type="button"
+            onClick={() => onApplyPreset('balanced')}
+            className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700 flex items-center space-x-1 transition-colors"
+          >
+            <Sparkles className="w-3 h-3 text-amber-400" />
+            <span>標準築城</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onApplyPreset('artillery')}
+            className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700 flex items-center space-x-1 transition-colors"
+          >
+            <Sparkles className="w-3 h-3 text-red-400" />
+            <span>砲台重層</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => onApplyPreset('assault')}
+            className="text-[11px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-1 rounded border border-slate-700 flex items-center space-x-1 transition-colors"
+          >
+            <Sparkles className="w-3 h-3 text-blue-400" />
+            <span>騎馬突撃</span>
+          </button>
+          <button
+            type="button"
+            onClick={onClearAll}
+            className="text-[11px] bg-red-950/40 hover:bg-red-900/60 text-red-300 px-2 py-1 rounded border border-red-800/60 flex items-center space-x-1 transition-colors ml-1"
+          >
+            <RotateCcw className="w-3 h-3" />
+            <span>配置初期化</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Item Selection Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
         {selectedCategory === 'wall' &&
-          Object.values(WALL_DEFS).map(item => {
-            const isSelected = selectedItemId === item.id;
-            const canAfford = budget >= item.cost;
+          Object.entries(WALL_DEFS).map(([id, def]) => {
+            const isSelected = selectedItemId === id;
+            const canAfford = budget >= def.cost;
             return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedItemId(item.id)}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
+              <div
+                key={id}
+                onClick={() => setSelectedItemId(id)}
+                className={`p-2.5 rounded-lg border cursor-pointer transition-all ${
                   isSelected
-                    ? 'bg-amber-950/40 border-amber-400 ring-2 ring-amber-500/30'
-                    : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700'
-                } ${!canAfford ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    ? 'bg-blue-950/60 border-blue-500 shadow-md shadow-blue-500/10'
+                    : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                } ${!canAfford && !isSelected ? 'opacity-60' : ''}`}
               >
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-bold text-xs sm:text-sm text-slate-100">{item.name}</span>
-                  <span className="text-[11px] font-bold text-amber-400 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-700/50">
-                    {item.cost}金
-                  </span>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-bold text-xs text-slate-200">{def.name}</div>
+                  <div className="text-amber-400 font-mono font-bold text-xs">{def.cost}金</div>
                 </div>
-                <div className="text-[11px] text-slate-300 line-clamp-1 mb-0.5">{item.description}</div>
-                <div className="flex items-center justify-between text-[10px] text-amber-300/90 font-mono font-medium">
-                  <span>{item.details}</span>
-                  <span className="text-amber-400 font-sans font-bold bg-amber-950/80 px-1 rounded">✍️なぞり可</span>
+                <div className="text-[10px] text-slate-400 line-clamp-1 mb-1.5">{def.description}</div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-700/60 pt-1">
+                  <span>耐久: {def.hp}</span>
+                  <div className="w-3.5 h-3.5 rounded border border-slate-600" style={{ backgroundColor: def.color || '#64748b' }} />
                 </div>
-              </button>
+              </div>
             );
           })}
 
         {selectedCategory === 'turret' &&
-          Object.values(TURRET_DEFS).map(item => {
-            const isSelected = selectedItemId === item.id;
-            const canAfford = budget >= item.cost;
+          Object.entries(TURRET_DEFS).map(([id, def]) => {
+            const isSelected = selectedItemId === id;
+            const canAfford = budget >= def.cost;
             return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedItemId(item.id)}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
+              <div
+                key={id}
+                onClick={() => setSelectedItemId(id)}
+                className={`p-2.5 rounded-lg border cursor-pointer transition-all ${
                   isSelected
-                    ? 'bg-blue-950/40 border-blue-400 ring-2 ring-blue-500/30'
-                    : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700'
-                } ${!canAfford ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    ? 'bg-blue-950/60 border-blue-500 shadow-md shadow-blue-500/10'
+                    : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                } ${!canAfford && !isSelected ? 'opacity-60' : ''}`}
               >
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-bold text-xs sm:text-sm text-slate-100">{item.name}</span>
-                  <span className="text-[11px] font-bold text-amber-400 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-700/50">
-                    {item.cost}金
-                  </span>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-bold text-xs text-slate-200">{def.name}</div>
+                  <div className="text-amber-400 font-mono font-bold text-xs">{def.cost}金</div>
                 </div>
-                <div className="text-[11px] text-slate-300 line-clamp-1 mb-0.5">{item.description}</div>
-                <div className="flex items-center justify-between text-[10px] text-blue-300 font-mono font-medium">
-                  <span>{item.details}</span>
-                  <span className="text-slate-400 font-sans">👆1基配置</span>
+                <div className="text-[10px] text-slate-400 line-clamp-1 mb-1.5">{def.description}</div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-700/60 pt-1">
+                  <span>攻撃: {def.attack}</span>
+                  <span>射程: {def.range}</span>
                 </div>
-              </button>
+              </div>
             );
           })}
 
         {selectedCategory === 'soldier' &&
-          Object.values(SOLDIER_DEFS).map(item => {
-            const isSelected = selectedItemId === item.id;
-            const canAfford = budget >= item.cost;
+          Object.entries(SOLDIER_DEFS).map(([id, def]) => {
+            const isSelected = selectedItemId === id;
+            const canAfford = budget >= def.cost;
             return (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setSelectedItemId(item.id)}
-                className={`p-2.5 rounded-xl border text-left transition-all ${
+              <div
+                key={id}
+                onClick={() => setSelectedItemId(id)}
+                className={`p-2.5 rounded-lg border cursor-pointer transition-all ${
                   isSelected
-                    ? 'bg-emerald-950/40 border-emerald-400 ring-2 ring-emerald-500/30'
-                    : 'bg-slate-800/60 hover:bg-slate-800 border-slate-700'
-                } ${!canAfford ? 'opacity-50 cursor-not-allowed' : ''}`}
+                    ? 'bg-blue-950/60 border-blue-500 shadow-md shadow-blue-500/10'
+                    : 'bg-slate-800/60 border-slate-700 hover:border-slate-500'
+                } ${!canAfford && !isSelected ? 'opacity-60' : ''}`}
               >
-                <div className="flex items-center justify-between mb-0.5">
-                  <span className="font-bold text-xs sm:text-sm text-slate-100">{item.name}</span>
-                  <span className="text-[11px] font-bold text-amber-400 bg-amber-950/80 px-1.5 py-0.2 rounded border border-amber-700/50">
-                    {item.cost}金
-                  </span>
+                <div className="flex items-center justify-between mb-1">
+                  <div className="font-bold text-xs text-slate-200">{def.name}</div>
+                  <div className="text-amber-400 font-mono font-bold text-xs">{def.cost}金</div>
                 </div>
-                <div className="text-[11px] text-slate-300 line-clamp-1 mb-0.5">{item.description}</div>
-                <div className="flex items-center justify-between text-[10px] text-emerald-300 font-mono font-medium">
-                  <span>{item.details}</span>
-                  <span className="text-slate-400 font-sans">👆1名配置</span>
+                <div className="text-[10px] text-slate-400 line-clamp-1 mb-1.5">{def.description}</div>
+                <div className="flex items-center justify-between text-[10px] text-slate-400 border-t border-slate-700/60 pt-1">
+                  <span>HP: {def.hp}</span>
+                  <span>攻: {def.attack}</span>
+                  <span>速: {def.speed}</span>
                 </div>
-              </button>
+              </div>
             );
           })}
       </div>
 
-      {/* SOLDIER STANCE SELECTION & BATCH CONTROL */}
+      {/* Soldier Stance Selection */}
       {selectedCategory === 'soldier' && (
-        <div className="space-y-2">
-          {/* New Deployed Stance Selector */}
-          <div className="bg-slate-800/70 border border-slate-700 rounded-xl p-2.5">
-            <div className="text-xs font-bold text-slate-300 mb-1.5 flex items-center justify-between">
-              <span>新規配置兵士の初期作戦:</span>
-              <span className="text-[11px] text-slate-400 font-normal">※やられた兵士は15秒後に自陣から復活します</span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-              {(['defense', 'attack', 'hybrid'] as SoldierStance[]).map(stance => {
-                const info = STANCE_INFO[stance];
-                const isCurrent = soldierStance === stance;
-                return (
-                  <button
-                    key={stance}
-                    type="button"
-                    onClick={() => setSoldierStance(stance)}
-                    className={`p-2 rounded-lg border text-left flex items-start gap-2 transition-all ${
-                      isCurrent
-                        ? 'bg-slate-700 border-amber-400 shadow ring-1 ring-amber-400/40'
-                        : 'bg-slate-900/60 hover:bg-slate-900 border-slate-700'
-                    }`}
-                  >
-                    <span
-                      className="w-5 h-5 rounded-full flex items-center justify-center font-bold text-[11px] text-white shrink-0 mt-0.5"
-                      style={{ backgroundColor: info.color }}
-                    >
-                      {info.badge}
-                    </span>
-                    <div>
-                      <div className="font-bold text-xs text-slate-100">{info.name}</div>
-                      <div className="text-[10px] text-slate-400 mt-0.5 leading-tight">{info.desc}</div>
-                    </div>
-                  </button>
-                );
-              })}
+        <div className="bg-slate-800/80 p-2.5 rounded-lg border border-slate-700 space-y-2">
+          <div className="flex items-center justify-between text-xs">
+            <span className="font-bold text-amber-400 flex items-center gap-1">
+              <Zap className="w-3.5 h-3.5" /> 新規配置時の初期作戦設定:
+            </span>
+            <div className="flex items-center gap-2 text-[11px] text-slate-400">
+              <span>現配置兵士:</span>
+              <span className="text-red-400 font-bold">突撃 {attackCount}</span>
+              <span className="text-blue-400 font-bold">防衛 {defenseCount}</span>
+              <span className="text-emerald-400 font-bold">遊撃 {hybridCount}</span>
             </div>
           </div>
 
-          {/* ALL SOLDIERS STANCE BATCH SWITCHER */}
-          {playerSoldiers.length > 0 && onChangeAllStances && (
-            <div className="bg-gradient-to-r from-slate-800/90 to-slate-900/90 border border-amber-500/40 rounded-xl p-2.5">
-              <div className="text-xs font-bold text-amber-300 mb-1.5 flex items-center justify-between">
-                <span className="flex items-center gap-1.5">
-                  <Zap className="w-3.5 h-3.5 text-amber-400 animate-pulse" />
-                  全員の作戦を一括変更 (配置済み {playerSoldiers.length}名):
-                </span>
-                <span className="text-[10px] text-slate-400 font-mono">
-                  攻:{attackCount}名 / 守:{defenseCount}名 / 遊:{hybridCount}名
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-3 gap-2">
+            {(['attack', 'defense', 'hybrid'] as const).map(stance => {
+              const info = STANCE_INFO[stance];
+              const isSelected = soldierStance === stance;
+              return (
                 <button
+                  key={stance}
                   type="button"
-                  onClick={() => onChangeAllStances('attack')}
-                  className="py-1.5 px-2 bg-red-950/60 hover:bg-red-900 border border-red-600 text-red-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all"
+                  onClick={() => setSoldierStance(stance)}
+                  className={`p-2 rounded-lg border text-left transition-all ${
+                    isSelected
+                      ? 'bg-blue-900/60 border-blue-400 shadow-md'
+                      : 'bg-slate-900/60 border-slate-700 hover:border-slate-500'
+                  }`}
                 >
-                  <span className="w-4 h-4 rounded-full bg-red-600 text-white text-[10px] flex items-center justify-center">攻</span>
-                  <span>全員「攻」に変更</span>
+                  <div className="flex items-center gap-1.5 font-bold text-xs text-slate-200">
+                    <span className="w-4 h-4 rounded-full bg-slate-700 text-[10px] flex items-center justify-center font-bold text-amber-300">
+                      {info.badge}
+                    </span>
+                    <span>{info.name}</span>
+                  </div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{info.desc}</div>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeAllStances('defense')}
-                  className="py-1.5 px-2 bg-blue-950/60 hover:bg-blue-900 border border-blue-600 text-blue-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all"
-                >
-                  <span className="w-4 h-4 rounded-full bg-blue-600 text-white text-[10px] flex items-center justify-center">守</span>
-                  <span>全員「守」に変更</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeAllStances('hybrid')}
-                  className="py-1.5 px-2 bg-emerald-950/60 hover:bg-emerald-900 border border-emerald-600 text-emerald-200 rounded-lg text-xs font-bold flex items-center justify-center gap-1 transition-all"
-                >
-                  <span className="w-4 h-4 rounded-full bg-emerald-600 text-white text-[10px] flex items-center justify-center">遊</span>
-                  <span>全員「遊」に変更</span>
-                </button>
-              </div>
-            </div>
-          )}
+              );
+            })}
+          </div>
         </div>
       )}
-
-      {/* Instructions bar */}
-      <div className="text-[11px] text-slate-400 flex flex-wrap items-center justify-between gap-2 px-1">
-        <span>
-          💡 <strong>配置方法:</strong> <span className="text-amber-300 font-bold">なぞって連続配置できるのは「壁」のみです。</span>砲台と兵士は1回クリックで1基ずつ配置されます。
-        </span>
-        <span className="text-amber-400/90 font-medium">
-          ※ 2つの丸を破壊すると本陣攻撃可能！ 3分制限時間経過時は城砦の合計体力で判定勝ち！
-        </span>
-      </div>
     </div>
   );
 };

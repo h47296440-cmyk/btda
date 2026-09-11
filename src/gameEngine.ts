@@ -13,6 +13,8 @@ import {
   Winner,
   RespawnQueueItem,
   TacticalBomb,
+  TerrainZone,
+  RallyPoint,
 } from './types';
 import {
   FIELD_WIDTH,
@@ -25,109 +27,70 @@ import {
   BATTLE_TIME_LIMIT,
   BOMB_CONFIG,
   KILL_BOUNTY_GOLD,
+  GAME_MODES,
+  GameModeConfig,
 } from './gameConfig';
 import { sounds } from './audio';
 
-// Helper to create default objectives
-export function createInitialObjectives(): Structure[] {
-  return [
-    // Player Honjin (Keep)
-    {
-      id: 'player_honjin',
+// Helper to create objectives for any game mode
+export function createInitialObjectives(modeConfig?: GameModeConfig): Structure[] {
+  const config = modeConfig || GAME_MODES['2_nations'];
+  const result: Structure[] = [];
+
+  for (const nation of config.nations) {
+    // Honjin (Central Keep)
+    result.push({
+      id: `${nation.id}_honjin`,
       type: 'honjin',
-      team: 'player',
-      x: 100,
-      y: FIELD_HEIGHT / 2,
-      width: 80,
-      height: 80,
+      team: nation.id,
+      x: nation.basePos.honjin.x,
+      y: nation.basePos.honjin.y,
+      width: 76,
+      height: 76,
       hp: 3800,
       maxHp: 3800,
       cost: 0,
       isObjective: true,
       objectiveType: 'honjin',
       isInvulnerable: true,
-    },
-    // Player Maru 1 (Ninomaru)
-    {
-      id: 'player_maru_1',
+    });
+
+    // Maru 1 (Ninomaru)
+    result.push({
+      id: `${nation.id}_maru_1`,
       type: 'maru_1',
-      team: 'player',
-      x: 310,
-      y: 190,
-      width: 64,
-      height: 64,
+      team: nation.id,
+      x: nation.basePos.maru1.x,
+      y: nation.basePos.maru1.y,
+      width: 62,
+      height: 62,
       hp: 1800,
       maxHp: 1800,
       cost: 0,
       isObjective: true,
       objectiveType: 'maru_1',
       isInvulnerable: false,
-    },
-    // Player Maru 2 (Sannomaru)
-    {
-      id: 'player_maru_2',
+    });
+
+    // Maru 2 (Sannomaru)
+    result.push({
+      id: `${nation.id}_maru_2`,
       type: 'maru_2',
-      team: 'player',
-      x: 310,
-      y: FIELD_HEIGHT - 190,
-      width: 64,
-      height: 64,
+      team: nation.id,
+      x: nation.basePos.maru2.x,
+      y: nation.basePos.maru2.y,
+      width: 62,
+      height: 62,
       hp: 1800,
       maxHp: 1800,
       cost: 0,
       isObjective: true,
       objectiveType: 'maru_2',
       isInvulnerable: false,
-    },
-    // Enemy Honjin
-    {
-      id: 'enemy_honjin',
-      type: 'honjin',
-      team: 'enemy',
-      x: FIELD_WIDTH - 100,
-      y: FIELD_HEIGHT / 2,
-      width: 80,
-      height: 80,
-      hp: 3800,
-      maxHp: 3800,
-      cost: 0,
-      isObjective: true,
-      objectiveType: 'honjin',
-      isInvulnerable: true,
-    },
-    // Enemy Maru 1
-    {
-      id: 'enemy_maru_1',
-      type: 'maru_1',
-      team: 'enemy',
-      x: FIELD_WIDTH - 310,
-      y: 190,
-      width: 64,
-      height: 64,
-      hp: 1800,
-      maxHp: 1800,
-      cost: 0,
-      isObjective: true,
-      objectiveType: 'maru_1',
-      isInvulnerable: false,
-    },
-    // Enemy Maru 2
-    {
-      id: 'enemy_maru_2',
-      type: 'maru_2',
-      team: 'enemy',
-      x: FIELD_WIDTH - 310,
-      y: FIELD_HEIGHT - 190,
-      width: 64,
-      height: 64,
-      hp: 1800,
-      maxHp: 1800,
-      cost: 0,
-      isObjective: true,
-      objectiveType: 'maru_2',
-      isInvulnerable: false,
-    },
-  ];
+    });
+  }
+
+  return result;
 }
 
 // Import and re-export procedural AI Castle Builder
@@ -153,7 +116,12 @@ export function updateGameStep(
   onMaruFall?: (team: Team, maruType: string) => void,
   onHonjinExposed?: (team: Team) => void,
   onEnemyKilled?: (x: number, y: number, bounty: number) => void,
-  onPlayerKilled?: (x: number, y: number, bounty: number) => void
+  onPlayerKilled?: (x: number, y: number, bounty: number) => void,
+  terrainZones: TerrainZone[] = [],
+  battleTimeLimit: number = BATTLE_TIME_LIMIT,
+  fieldWidth: number = FIELD_WIDTH,
+  fieldHeight: number = FIELD_HEIGHT,
+  rallyPoint?: RallyPoint | null
 ): {
   structures: Structure[];
   soldiers: Soldier[];
@@ -165,6 +133,16 @@ export function updateGameStep(
   stats: GameStats;
   winner: Winner;
 } {
+  // Defensive bounds check ensuring valid finite dimensions
+  const validFieldWidth =
+    typeof fieldWidth === 'number' && !isNaN(fieldWidth) && fieldWidth > 0
+      ? fieldWidth
+      : FIELD_WIDTH;
+  const validFieldHeight =
+    typeof fieldHeight === 'number' && !isNaN(fieldHeight) && fieldHeight > 0
+      ? fieldHeight
+      : FIELD_HEIGHT;
+
   const newProjectiles = [...projectiles];
   const newDamageNumbers = [...damageNumbers];
   const newParticles = [...particles];
@@ -184,7 +162,13 @@ export function updateGameStep(
     });
   };
 
-  const addExplosion = (x: number, y: number, color: string = '#f59e0b', count: number = 8, type: 'spark' | 'smoke' | 'debris' = 'spark') => {
+  const addExplosion = (
+    x: number,
+    y: number,
+    color: string = '#f59e0b',
+    count: number = 8,
+    type: 'spark' | 'smoke' | 'debris' = 'spark'
+  ) => {
     for (let i = 0; i < count; i++) {
       const angle = Math.random() * Math.PI * 2;
       const speed = 1 + Math.random() * 4;
@@ -203,46 +187,35 @@ export function updateGameStep(
     }
   };
 
-  // 1. Check Maru states and unlock Honjin if both Maru are destroyed
-  const playerMaru1 = structures.find(s => s.team === 'player' && s.objectiveType === 'maru_1' && s.hp > 0);
-  const playerMaru2 = structures.find(s => s.team === 'player' && s.objectiveType === 'maru_2' && s.hp > 0);
-  const playerHonjin = structures.find(s => s.team === 'player' && s.objectiveType === 'honjin');
+  // 1. Check Maru states and unlock Honjin if both Maru are destroyed (per team)
+  const allTeams = Array.from(new Set(structures.map(s => s.team)));
+  for (const team of allTeams) {
+    const maru1 = structures.find(s => s.team === team && s.objectiveType === 'maru_1' && s.hp > 0);
+    const maru2 = structures.find(s => s.team === team && s.objectiveType === 'maru_2' && s.hp > 0);
+    const honjin = structures.find(s => s.team === team && s.objectiveType === 'honjin');
 
-  if (playerHonjin) {
-    const wasInvuln = playerHonjin.isInvulnerable;
-    playerHonjin.isInvulnerable = !!(playerMaru1 || playerMaru2);
-    if (wasInvuln && !playerHonjin.isInvulnerable) {
-      if (onHonjinExposed) onHonjinExposed('player');
-      sounds.playWarHorn();
+    if (honjin) {
+      const wasInvuln = honjin.isInvulnerable;
+      honjin.isInvulnerable = !!(maru1 || maru2);
+      if (wasInvuln && !honjin.isInvulnerable) {
+        if (onHonjinExposed) onHonjinExposed(team);
+        sounds.playWarHorn();
+      }
     }
   }
 
-  const enemyMaru1 = structures.find(s => s.team === 'enemy' && s.objectiveType === 'maru_1' && s.hp > 0);
-  const enemyMaru2 = structures.find(s => s.team === 'enemy' && s.objectiveType === 'maru_2' && s.hp > 0);
-  const enemyHonjin = structures.find(s => s.team === 'enemy' && s.objectiveType === 'honjin');
-
-  if (enemyHonjin) {
-    const wasInvuln = enemyHonjin.isInvulnerable;
-    enemyHonjin.isInvulnerable = !!(enemyMaru1 || enemyMaru2);
-    if (wasInvuln && !enemyHonjin.isInvulnerable) {
-      if (onHonjinExposed) onHonjinExposed('enemy');
-      sounds.playWarHorn();
-    }
-  }
-
-  // 2. Tactical Bomb Processing (Supports both Player & Enemy bombs symmetrically)
+  // 2. Tactical Bomb Processing
   if (currentBomb && !currentBomb.exploded) {
     currentBomb.progress += 2.2 * deltaTime;
     currentBomb.currentY = currentBomb.startY + (currentBomb.targetY - currentBomb.startY) * Math.min(1, currentBomb.progress);
 
-    // Smoke trail
     newParticles.push({
       id: Math.random().toString(),
       x: currentBomb.targetX + (Math.random() * 8 - 4),
       y: currentBomb.currentY,
       vx: 0,
       vy: -1,
-      color: currentBomb.sourceTeam === 'enemy' ? '#f43f5e' : '#fbbf24',
+      color: currentBomb.sourceTeam === 'player' ? '#60a5fa' : '#f43f5e',
       size: 4,
       life: 0.3,
       maxLife: 0.3,
@@ -252,23 +225,22 @@ export function updateGameStep(
     if (currentBomb.progress >= 1) {
       currentBomb.exploded = true;
       sounds.playCannonBlast();
-      // Giant explosion!
       addExplosion(currentBomb.targetX, currentBomb.targetY, '#f97316', 24, 'smoke');
       addExplosion(currentBomb.targetX, currentBomb.targetY, '#ef4444', 28, 'debris');
       addExplosion(currentBomb.targetX, currentBomb.targetY, '#fbbf24', 20, 'spark');
 
-      const targetTeam: Team = currentBomb.sourceTeam === 'enemy' ? 'player' : 'enemy';
+      const bombSourceTeam = currentBomb.sourceTeam || 'player';
 
-      // Damage all opposing soldiers within radius
+      // Damage opposing soldiers within radius
       for (const sol of soldiers) {
-        if (sol.team === targetTeam && sol.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, sol.x, sol.y) <= BOMB_CONFIG.radius) {
+        if (sol.team !== bombSourceTeam && sol.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, sol.x, sol.y) <= BOMB_CONFIG.radius) {
           sol.hp -= BOMB_CONFIG.damage;
           addDamageFloater(sol.x, sol.y, BOMB_CONFIG.damage, '#ef4444', '爆撃直撃');
         }
       }
-      // Damage all opposing structures within radius
+      // Damage opposing structures within radius
       for (const st of structures) {
-        if (st.team === targetTeam && st.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, st.x, st.y) <= BOMB_CONFIG.radius) {
+        if (st.team !== bombSourceTeam && st.hp > 0 && dist(currentBomb.targetX, currentBomb.targetY, st.x, st.y) <= BOMB_CONFIG.radius) {
           if (st.isInvulnerable) {
             sounds.playShieldDeflect();
             addDamageFloater(st.x, st.y, 0, '#60a5fa', '結界防御');
@@ -282,15 +254,18 @@ export function updateGameStep(
     }
   }
 
-  // 3. Soldier 15-Second Respawn Processing (やられた兵は15秒で復活)
+  // 3. Soldier Respawn Processing (15 seconds after death)
   for (let i = newRespawnQueue.length - 1; i >= 0; i--) {
     const item = newRespawnQueue[i];
     if (currentTime >= item.respawnTime) {
       newRespawnQueue.splice(i, 1);
       const def = SOLDIER_DEFS[item.type];
       const isPlayer = item.team === 'player';
-      const spawnX = isPlayer ? 120 + Math.random() * 60 : FIELD_WIDTH - 120 - Math.random() * 60;
-      const spawnY = FIELD_HEIGHT / 2 + (Math.random() * 160 - 80);
+
+      // Find team Honjin to respawn near
+      const teamHonjin = structures.find(s => s.team === item.team && s.objectiveType === 'honjin');
+      const spawnX = teamHonjin ? teamHonjin.x + (Math.random() * 60 - 30) : isPlayer ? 120 : validFieldWidth - 120;
+      const spawnY = teamHonjin ? teamHonjin.y + (Math.random() * 60 - 30) : validFieldHeight / 2;
 
       soldiers.push({
         id: `${item.team}_respawn_${Math.random().toString(36).substring(2, 8)}`,
@@ -328,8 +303,10 @@ export function updateGameStep(
     const cooldown = struct.attackCooldown || 1.5;
     if (currentTime - (struct.lastAttackTime || 0) < cooldown) continue;
 
-    const enemyTeam = struct.team === 'player' ? 'enemy' : 'player';
-    const targetSoldiers = soldiers.filter(s => s.team === enemyTeam && s.hp > 0 && dist(struct.x, struct.y, s.x, s.y) <= struct.range!);
+    // Target any opposing soldier
+    const targetSoldiers = soldiers.filter(
+      s => s.team !== struct.team && s.hp > 0 && dist(struct.x, struct.y, s.x, s.y) <= struct.range!
+    );
 
     if (targetSoldiers.length > 0) {
       targetSoldiers.sort((a, b) => dist(struct.x, struct.y, a.x, a.y) - dist(struct.x, struct.y, b.x, b.y));
@@ -367,9 +344,9 @@ export function updateGameStep(
           targetX: target.x,
           targetY: target.y,
           progress: 0,
-          speed: 3.2,
+          speed: 2.8,
           damage: struct.attackPower,
-          splashRadius: 55,
+          splashRadius: 75,
           type: 'cannonball',
           arcHeight: 45,
         });
@@ -385,16 +362,30 @@ export function updateGameStep(
           targetX: target.x,
           targetY: target.y,
           progress: 0,
-          speed: 2.8,
+          speed: 2.2,
           damage: struct.attackPower,
-          splashRadius: 40,
+          splashRadius: 95,
           type: 'boulder',
           arcHeight: 70,
         });
       } else if (struct.type === 'fire_tower') {
-        target.hp -= struct.attackPower;
-        addDamageFloater(target.x, target.y, struct.attackPower, '#f97316');
-        addExplosion(target.x, target.y, '#f97316', 5, 'spark');
+        sounds.playFireThrower();
+        newProjectiles.push({
+          id: Math.random().toString(),
+          sourceTeam: struct.team,
+          x: struct.x,
+          y: struct.y,
+          startX: struct.x,
+          startY: struct.y,
+          targetX: target.x,
+          targetY: target.y,
+          progress: 0,
+          speed: 5.2,
+          damage: struct.attackPower,
+          splashRadius: 30,
+          type: 'fire',
+          arcHeight: 12,
+        });
       }
     }
   }
@@ -408,7 +399,6 @@ export function updateGameStep(
 
     if (p.progress >= 1) {
       newProjectiles.splice(i, 1);
-      const enemyTeam = p.sourceTeam === 'player' ? 'enemy' : 'player';
 
       if (p.splashRadius > 0) {
         addExplosion(p.targetX, p.targetY, '#ef4444', 16, 'smoke');
@@ -416,13 +406,13 @@ export function updateGameStep(
         sounds.playCannonBlast();
 
         for (const sol of soldiers) {
-          if (sol.team === enemyTeam && sol.hp > 0 && dist(p.targetX, p.targetY, sol.x, sol.y) <= p.splashRadius) {
+          if (sol.team !== p.sourceTeam && sol.hp > 0 && dist(p.targetX, p.targetY, sol.x, sol.y) <= p.splashRadius) {
             sol.hp -= p.damage;
             addDamageFloater(sol.x, sol.y, p.damage, '#ef4444');
           }
         }
         for (const st of structures) {
-          if (st.team === enemyTeam && st.hp > 0 && dist(p.targetX, p.targetY, st.x, st.y) <= p.splashRadius) {
+          if (st.team !== p.sourceTeam && st.hp > 0 && dist(p.targetX, p.targetY, st.x, st.y) <= p.splashRadius) {
             if (st.isInvulnerable) {
               sounds.playShieldDeflect();
               addDamageFloater(st.x, st.y, 0, '#60a5fa', '結界防御');
@@ -436,7 +426,7 @@ export function updateGameStep(
         addExplosion(p.targetX, p.targetY, '#94a3b8', 4, 'spark');
         let hit = false;
         for (const sol of soldiers) {
-          if (sol.team === enemyTeam && sol.hp > 0 && dist(p.targetX, p.targetY, sol.x, sol.y) <= 24) {
+          if (sol.team !== p.sourceTeam && sol.hp > 0 && dist(p.targetX, p.targetY, sol.x, sol.y) <= 24) {
             sol.hp -= p.damage;
             addDamageFloater(sol.x, sol.y, p.damage, '#f87171');
             hit = true;
@@ -445,7 +435,7 @@ export function updateGameStep(
         }
         if (!hit) {
           for (const st of structures) {
-            if (st.team === enemyTeam && st.hp > 0 && dist(p.targetX, p.targetY, st.x, st.y) <= 30) {
+            if (st.team !== p.sourceTeam && st.hp > 0 && dist(p.targetX, p.targetY, st.x, st.y) <= 30) {
               if (st.isInvulnerable) {
                 sounds.playShieldDeflect();
                 addDamageFloater(st.x, st.y, 0, '#60a5fa', '結界防御');
@@ -461,66 +451,105 @@ export function updateGameStep(
     }
   }
 
-  // 6. Update Soldiers (Movement & Stances)
-  // Soft friendly soldier crowd separation (prevents clogging at choke points)
-  for (let a = 0; a < soldiers.length; a++) {
-    const s1 = soldiers[a];
+  // 6. Soldier Repulsion Separation
+  for (let i = 0; i < soldiers.length; i++) {
+    const s1 = soldiers[i];
     if (s1.hp <= 0) continue;
-    for (let b = a + 1; b < soldiers.length; b++) {
-      const s2 = soldiers[b];
-      if (s2.hp <= 0 || s1.team !== s2.team) continue;
+    for (let j = i + 1; j < soldiers.length; j++) {
+      const s2 = soldiers[j];
+      if (s2.hp <= 0) continue;
       const d = dist(s1.x, s1.y, s2.x, s2.y);
-      if (d < 16 && d > 0.001) {
-        const push = (16 - d) * 0.12;
-        const nx = (s1.x - s2.x) / d;
-        const ny = (s1.y - s2.y) / d;
-        s1.x += nx * push;
-        s1.y += ny * push;
-        s2.x -= nx * push;
-        s2.y -= ny * push;
+      const minDistance = s1.team === s2.team ? 20 : 18;
+      if (d < minDistance && d > 0.001) {
+        const overlap = minDistance - d;
+        const push = (overlap / 2) * 0.5;
+        const nx = (s2.x - s1.x) / d;
+        const ny = (s2.y - s1.y) / d;
+        s1.x -= nx * push;
+        s1.y -= ny * push;
+        s2.x += nx * push;
+        s2.y += ny * push;
       }
     }
   }
 
+  // 7. Soldier Targeting, Manual Movement (Waypoints & Rally), and Combat
   for (const soldier of soldiers) {
     if (soldier.hp <= 0) continue;
 
-    // Friendly structures (walls, ninomaru, sannomaru, honjin, turrets) are completely passable without push
-
-    const enemyTeam = soldier.team === 'player' ? 'enemy' : 'player';
     const isPlayer = soldier.team === 'player';
-
     let targetEntity: { x: number; y: number; id: string; type: 'soldier' | 'structure'; hp: number; isInvulnerable?: boolean } | null = null;
 
-    const nearbyEnemySoldiers = soldiers.filter(
-      s => s.team === enemyTeam && s.hp > 0 && dist(soldier.x, soldier.y, s.x, s.y) <= soldier.attackRange + 15
+    // Check immediate nearby opposing soldiers within attack reach
+    const immediateEnemies = soldiers.filter(
+      s => s.team !== soldier.team && s.hp > 0 && dist(soldier.x, soldier.y, s.x, s.y) <= soldier.attackRange + 15
     );
 
-    if (nearbyEnemySoldiers.length > 0) {
-      nearbyEnemySoldiers.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
+    if (immediateEnemies.length > 0) {
+      immediateEnemies.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
       targetEntity = {
-        x: nearbyEnemySoldiers[0].x,
-        y: nearbyEnemySoldiers[0].y,
-        id: nearbyEnemySoldiers[0].id,
+        x: immediateEnemies[0].x,
+        y: immediateEnemies[0].y,
+        id: immediateEnemies[0].id,
         type: 'soldier',
-        hp: nearbyEnemySoldiers[0].hp,
+        hp: immediateEnemies[0].hp,
       };
-    } else {
+    } else if (soldier.waypointPath && soldier.waypointPath.length > 0) {
+      // MANUAL DRAWN MARCH PATH GUIDANCE (なぞり進軍路)
+      const currentWaypoint = soldier.waypointPath[0];
+      const dToWaypoint = dist(soldier.x, soldier.y, currentWaypoint.x, currentWaypoint.y);
+      if (dToWaypoint <= 20) {
+        soldier.waypointPath.shift();
+      }
+      if (soldier.waypointPath.length > 0) {
+        const nextWp = soldier.waypointPath[0];
+        targetEntity = {
+          x: nextWp.x,
+          y: nextWp.y,
+          id: 'waypoint',
+          type: 'structure',
+          hp: 9999,
+        };
+      }
+    } else if (soldier.rallyTarget) {
+      // MANUAL RALLY POINT GUIDANCE (集合地点指図)
+      const dToRally = dist(soldier.x, soldier.y, soldier.rallyTarget.x, soldier.rallyTarget.y);
+      if (dToRally > 38) {
+        targetEntity = {
+          x: soldier.rallyTarget.x,
+          y: soldier.rallyTarget.y,
+          id: 'rally_point',
+          type: 'structure',
+          hp: 9999,
+        };
+      }
+    }
+
+    // Default Autonomous Stance AI if no manual order or immediate threat
+    if (!targetEntity) {
       if (soldier.stance === 'attack') {
-        const enemyActiveMaru = structures.filter(
-          s => s.team === enemyTeam && (s.objectiveType === 'maru_1' || s.objectiveType === 'maru_2') && s.hp > 0
+        // Find opponent Maru or Honjin
+        const opponentMarus = structures.filter(
+          s => s.team !== soldier.team && (s.objectiveType === 'maru_1' || s.objectiveType === 'maru_2') && s.hp > 0
         );
 
         let primaryObjective: Structure | undefined;
-        if (enemyActiveMaru.length > 0) {
-          enemyActiveMaru.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
-          primaryObjective = enemyActiveMaru[0];
+        if (opponentMarus.length > 0) {
+          opponentMarus.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
+          primaryObjective = opponentMarus[0];
         } else {
-          primaryObjective = structures.find(s => s.team === enemyTeam && s.objectiveType === 'honjin' && s.hp > 0);
+          const opponentHonjins = structures.filter(
+            s => s.team !== soldier.team && s.objectiveType === 'honjin' && s.hp > 0
+          );
+          if (opponentHonjins.length > 0) {
+            opponentHonjins.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
+            primaryObjective = opponentHonjins[0];
+          }
         }
 
+        // Check if any opponent walls/turrets are directly blocking the advance
         const blockingStructures = structures.filter(
-          s => s.team === enemyTeam && s.hp > 0 && dist(soldier.x, soldier.y, s.x, s.y) <= 80
+          s => s.team !== soldier.team && s.hp > 0 && dist(soldier.x, soldier.y, s.x, s.y) <= 85
         );
 
         if (blockingStructures.length > 0) {
@@ -545,9 +574,13 @@ export function updateGameStep(
           };
         }
       } else if (soldier.stance === 'defense') {
-        const homeBoundaryX = isPlayer ? 620 : FIELD_WIDTH - 620;
+        // Intercept any opponent invading near home base
+        const homeHonjin = structures.find(s => s.team === soldier.team && s.objectiveType === 'honjin');
+        const homeBaseX = homeHonjin ? homeHonjin.x : isPlayer ? 160 : fieldWidth - 160;
+        const homeBaseY = homeHonjin ? homeHonjin.y : fieldHeight / 2;
+
         const invadingEnemies = soldiers.filter(
-          s => s.team === enemyTeam && s.hp > 0 && (isPlayer ? s.x <= homeBoundaryX : s.x >= homeBoundaryX)
+          s => s.team !== soldier.team && s.hp > 0 && dist(homeBaseX, homeBaseY, s.x, s.y) <= 360
         );
 
         if (invadingEnemies.length > 0) {
@@ -560,8 +593,10 @@ export function updateGameStep(
             hp: invadingEnemies[0].hp,
           };
         } else {
-          const anchorX = isPlayer ? 260 : FIELD_WIDTH - 260;
-          const anchorY = soldier.y < FIELD_HEIGHT / 2 ? 220 : FIELD_HEIGHT - 220;
+          // Patrol anchor in front of home Honjin
+          const dirToCenter = Math.atan2(fieldHeight / 2 - homeBaseY, fieldWidth / 2 - homeBaseX);
+          const anchorX = homeBaseX + Math.cos(dirToCenter) * 120;
+          const anchorY = homeBaseY + Math.sin(dirToCenter) * 120;
           targetEntity = {
             x: anchorX,
             y: anchorY,
@@ -571,56 +606,45 @@ export function updateGameStep(
           };
         }
       } else {
-        // Hybrid stance
-        const nearbyEnemies = soldiers.filter(
-          s => s.team === enemyTeam && s.hp > 0 && dist(soldier.x, soldier.y, s.x, s.y) <= 260
+        // Hybrid stance: skirmish in midfield or assault nearest opponent
+        const nearbyOpponents = soldiers.filter(
+          s => s.team !== soldier.team && s.hp > 0 && dist(soldier.x, soldier.y, s.x, s.y) <= 280
         );
 
-        if (nearbyEnemies.length > 0) {
-          nearbyEnemies.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
+        if (nearbyOpponents.length > 0) {
+          nearbyOpponents.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
           targetEntity = {
-            x: nearbyEnemies[0].x,
-            y: nearbyEnemies[0].y,
-            id: nearbyEnemies[0].id,
+            x: nearbyOpponents[0].x,
+            y: nearbyOpponents[0].y,
+            id: nearbyOpponents[0].id,
             type: 'soldier',
-            hp: nearbyEnemies[0].hp,
+            hp: nearbyOpponents[0].hp,
           };
         } else {
-          const midLineX = FIELD_WIDTH / 2 + (isPlayer ? 90 : -90);
-          if ((isPlayer && soldier.x < midLineX) || (!isPlayer && soldier.x > midLineX)) {
+          const activeMaru = structures.filter(
+            s => s.team !== soldier.team && (s.objectiveType === 'maru_1' || s.objectiveType === 'maru_2') && s.hp > 0
+          );
+          if (activeMaru.length > 0) {
+            activeMaru.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
             targetEntity = {
-              x: midLineX,
-              y: soldier.y,
-              id: 'midline',
+              x: activeMaru[0].x,
+              y: activeMaru[0].y,
+              id: activeMaru[0].id,
               type: 'structure',
-              hp: 9999,
+              hp: activeMaru[0].hp,
+              isInvulnerable: activeMaru[0].isInvulnerable,
             };
           } else {
-            const activeMaru = structures.filter(
-              s => s.team === enemyTeam && (s.objectiveType === 'maru_1' || s.objectiveType === 'maru_2') && s.hp > 0
-            );
-            if (activeMaru.length > 0) {
-              activeMaru.sort((a, b) => dist(soldier.x, soldier.y, a.x, a.y) - dist(soldier.x, soldier.y, b.x, b.y));
+            const oppHon = structures.find(s => s.team !== soldier.team && s.objectiveType === 'honjin' && s.hp > 0);
+            if (oppHon) {
               targetEntity = {
-                x: activeMaru[0].x,
-                y: activeMaru[0].y,
-                id: activeMaru[0].id,
+                x: oppHon.x,
+                y: oppHon.y,
+                id: oppHon.id,
                 type: 'structure',
-                hp: activeMaru[0].hp,
-                isInvulnerable: activeMaru[0].isInvulnerable,
+                hp: oppHon.hp,
+                isInvulnerable: oppHon.isInvulnerable,
               };
-            } else {
-              const enemyHon = structures.find(s => s.team === enemyTeam && s.objectiveType === 'honjin' && s.hp > 0);
-              if (enemyHon) {
-                targetEntity = {
-                  x: enemyHon.x,
-                  y: enemyHon.y,
-                  id: enemyHon.id,
-                  type: 'structure',
-                  hp: enemyHon.hp,
-                  isInvulnerable: enemyHon.isInvulnerable,
-                };
-              }
             }
           }
         }
@@ -628,14 +652,22 @@ export function updateGameStep(
     }
 
     if (targetEntity) {
-      const d = dist(soldier.x, soldier.y, targetEntity.x, targetEntity.y);
-      const angle = Math.atan2(targetEntity.y - soldier.y, targetEntity.x - soldier.x);
-      soldier.facing = angle;
+      soldier.targetX = targetEntity.x;
+      soldier.targetY = targetEntity.y;
+      soldier.targetId = targetEntity.id;
+      soldier.targetType = targetEntity.type;
 
-      if (d <= soldier.attackRange && targetEntity.id !== 'patrol' && targetEntity.id !== 'midline') {
-        soldier.isAttacking = true;
+      const d = dist(soldier.x, soldier.y, targetEntity.x, targetEntity.y);
+      const isWithinAttackRange = d <= soldier.attackRange;
+
+      soldier.facing = Math.atan2(targetEntity.y - soldier.y, targetEntity.x - soldier.x);
+
+      if (isWithinAttackRange && targetEntity.id !== 'patrol' && targetEntity.id !== 'waypoint' && targetEntity.id !== 'rally_point') {
+        // Combat Attack
         if (currentTime - soldier.lastAttackTime >= soldier.attackCooldown) {
           soldier.lastAttackTime = currentTime;
+          soldier.isAttacking = true;
+          soldier.attackAnimTimer = 0.2;
 
           let damage = soldier.attackPower;
           if (targetEntity.type === 'structure') {
@@ -654,36 +686,41 @@ export function updateGameStep(
               targetX: targetEntity.x,
               targetY: targetEntity.y,
               progress: 0,
-              speed: 5.0,
+              speed: 4.8,
               damage,
               splashRadius: 0,
               type: 'arrow',
-              arcHeight: 20,
+              arcHeight: 25,
             });
           } else {
+            // Melee Slash or Strike
             sounds.playSwordSlash();
-            addExplosion(targetEntity.x, targetEntity.y, '#e2e8f0', 4, 'spark');
 
             if (targetEntity.type === 'soldier') {
-              const targetSol = soldiers.find(s => s.id === targetEntity!.id);
-              if (targetSol) {
-                targetSol.hp -= damage;
-                addDamageFloater(targetSol.x, targetSol.y, damage, isPlayer ? '#60a5fa' : '#f87171');
-                if (targetSol.hp <= 0) soldier.kills++;
+              const enemySol = soldiers.find(s => s.id === targetEntity!.id);
+              if (enemySol) {
+                enemySol.hp -= damage;
+                addDamageFloater(enemySol.x, enemySol.y, damage, isPlayer ? '#ef4444' : '#60a5fa');
+                addExplosion(enemySol.x, enemySol.y, '#f87171', 4, 'spark');
+
+                if (enemySol.hp <= 0) {
+                  soldier.kills++;
+                }
               }
             } else {
-              const targetStr = structures.find(s => s.id === targetEntity!.id);
-              if (targetStr) {
-                if (targetStr.isInvulnerable) {
+              const str = structures.find(s => s.id === targetEntity!.id);
+              if (str) {
+                if (str.isInvulnerable) {
                   sounds.playShieldDeflect();
-                  addDamageFloater(targetStr.x, targetStr.y, 0, '#60a5fa', '結界無効');
+                  addDamageFloater(str.x, str.y, 0, '#60a5fa', '結界防御');
                 } else {
-                  targetStr.hp -= damage;
-                  addDamageFloater(targetStr.x, targetStr.y, damage, '#f59e0b');
+                  str.hp -= damage;
+                  addDamageFloater(str.x, str.y, damage, '#f59e0b');
+                  addExplosion(str.x, str.y, '#d97706', 4, 'debris');
 
-                  if (targetStr.spikeDamage && targetStr.spikeDamage > 0) {
-                    soldier.hp -= targetStr.spikeDamage;
-                    addDamageFloater(soldier.x, soldier.y, targetStr.spikeDamage, '#ef4444', '反撃');
+                  if (str.spikeDamage && str.spikeDamage > 0) {
+                    soldier.hp -= str.spikeDamage;
+                    addDamageFloater(soldier.x, soldier.y, str.spikeDamage, '#dc2626', '反撃');
                   }
                 }
               }
@@ -691,150 +728,139 @@ export function updateGameStep(
           }
         }
       } else {
-        soldier.isAttacking = false;
-        const moveSpeed = soldier.speed * 60 * deltaTime;
-        const baseAngle = Math.atan2(targetEntity.y - soldier.y, targetEntity.x - soldier.x);
+        // MOVEMENT WITH TERRAIN HAZARD EFFECTS (沼地・氷原)
+        let speedMultiplier = 1.0;
 
-        // Helper to check if a position collides with boundary or any blocking structure
-        const getObstacleAt = (
-          px: number,
-          py: number,
-          targetId?: string | null
-        ): Structure | 'boundary' | null => {
-          if (px < 18 || px > FIELD_WIDTH - 18 || py < 25 || py > FIELD_HEIGHT - 25) {
+        for (const zone of terrainZones) {
+          if (
+            soldier.x >= zone.x &&
+            soldier.x <= zone.x + zone.width &&
+            soldier.y >= zone.y &&
+            soldier.y <= zone.y + zone.height
+          ) {
+            if (zone.type === 'swamp') {
+              // Swamp slows foot movement down to 0.42x
+              speedMultiplier = 0.42;
+              if (Math.random() < 0.12) {
+                newParticles.push({
+                  id: Math.random().toString(),
+                  x: soldier.x + (Math.random() * 8 - 4),
+                  y: soldier.y + 6,
+                  vx: (Math.random() - 0.5) * 1.5,
+                  vy: -Math.random() * 1.5,
+                  color: '#3d2817',
+                  size: 3,
+                  life: 0.25,
+                  maxLife: 0.25,
+                  type: 'debris',
+                });
+              }
+            } else if (zone.type === 'ice') {
+              // Ice increases sliding speed to 1.55x
+              speedMultiplier = 1.55;
+              if (Math.random() < 0.16) {
+                newParticles.push({
+                  id: Math.random().toString(),
+                  x: soldier.x + (Math.random() * 8 - 4),
+                  y: soldier.y + (Math.random() * 6 - 3),
+                  vx: (Math.random() - 0.5) * 2,
+                  vy: (Math.random() - 0.5) * 2,
+                  color: '#e0f2fe',
+                  size: 2.5,
+                  life: 0.3,
+                  maxLife: 0.3,
+                  type: 'spark',
+                });
+              }
+            }
+          }
+        }
+
+        const moveDist = soldier.speed * speedMultiplier * 55 * deltaTime;
+        const angle = Math.atan2(targetEntity.y - soldier.y, targetEntity.x - soldier.x);
+        const directStepX = soldier.x + Math.cos(angle) * moveDist;
+        const directStepY = soldier.y + Math.sin(angle) * moveDist;
+
+        // Obstacle collision check (Friendly structures are passable)
+        const checkObstacle = (px: number, py: number) => {
+          if (px < 18 || px > validFieldWidth - 18 || py < 25 || py > validFieldHeight - 25) {
             return 'boundary';
           }
           for (const st of structures) {
-            if (st.hp <= 0 || st.id === targetId) continue;
-            // ALL FRIENDLY STRUCTURES: Freely passable! (二の丸三の丸本陣防壁砲台すべてすり抜け可能)
-            if (st.team === soldier.team) {
-              continue;
-            }
-            // ENEMY STRUCTURES & WALLS: Block opposing soldiers
-            const hw = st.width / 2 + 2;
-            const hh = st.height / 2 + 2;
-            if (Math.abs(px - st.x) < hw && Math.abs(py - st.y) < hh) {
+            if (st.hp <= 0) continue;
+            if (st.team === soldier.team) continue;
+            if (targetEntity && targetEntity.id === st.id) continue;
+
+            const halfW = (st.width || 36) / 2 + 10;
+            const halfH = (st.height || 36) / 2 + 10;
+            if (Math.abs(px - st.x) < halfW && Math.abs(py - st.y) < halfH) {
               return st;
             }
           }
           return null;
         };
 
-        // 1. Check direct path
-        const directStepX = soldier.x + Math.cos(baseAngle) * moveSpeed;
-        const directStepY = soldier.y + Math.sin(baseAngle) * moveSpeed;
-        const obsStep = getObstacleAt(directStepX, directStepY, targetEntity.id);
+        const obsStep = checkObstacle(directStepX, directStepY);
 
         if (!obsStep) {
-          // Direct step is clear!
-          soldier.avoidDir = undefined;
+          soldier.x = Math.max(20, Math.min(validFieldWidth - 20, directStepX));
+          soldier.y = Math.max(30, Math.min(validFieldHeight - 30, directStepY));
           soldier.stuckTimer = 0;
-          soldier.facing = baseAngle;
-          soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, directStepX));
-          soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, directStepY));
         } else {
-          // Direct step is blocked by an obstacle (enemy wall or core building)
-          if (obsStep !== 'boundary' && obsStep.team === enemyTeam && obsStep.type.includes('wall')) {
-            // Attack enemy wall if in attack stance or sapper
-            if (soldier.type === 'sapper' || soldier.stance === 'attack') {
-              if (currentTime - soldier.lastAttackTime >= soldier.attackCooldown) {
-                soldier.lastAttackTime = currentTime;
-                const dmg = Math.floor(soldier.attackPower * soldier.siegeMultiplier);
-                obsStep.hp -= dmg;
-                sounds.playSwordSlash();
-                addDamageFloater(obsStep.x, obsStep.y, dmg, '#fbbf24', '壁破壊');
-              }
+          // If attacking wall directly, damage it
+          if (obsStep !== 'boundary' && obsStep.team !== soldier.team && obsStep.type.includes('wall')) {
+            if (currentTime - soldier.lastAttackTime >= soldier.attackCooldown) {
+              soldier.lastAttackTime = currentTime;
+              const dmg = Math.floor(soldier.attackPower * soldier.siegeMultiplier);
+              obsStep.hp -= dmg;
+              addDamageFloater(obsStep.x, obsStep.y, dmg, '#f59e0b');
+              addExplosion(obsStep.x, obsStep.y, '#78716c', 3, 'debris');
+              sounds.playSwordSlash();
             }
           }
 
-          // Smart Tangent Wall-Sliding & Detour Navigation
-          let moved = false;
-          const diffX = targetEntity.x - soldier.x;
-          const diffY = targetEntity.y - soldier.y;
+          // Smart steering around obstacle
+          if (!soldier.avoidDir) {
+            soldier.avoidDir = Math.random() < 0.5 ? 1 : -1;
+          }
 
-          // Helper to try vertical slide (along Y)
-          const trySlideY = (): boolean => {
-            const prefSignY = diffY >= 0 ? 1 : -1;
-            const candY = soldier.y + prefSignY * moveSpeed;
-            if (!getObstacleAt(soldier.x, candY, targetEntity.id)) {
-              soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, candY));
-              soldier.facing = prefSignY > 0 ? Math.PI / 2 : -Math.PI / 2;
-              return true;
-            }
-            // Try opposite direction along Y
-            const altY = soldier.y - prefSignY * moveSpeed;
-            if (!getObstacleAt(soldier.x, altY, targetEntity.id)) {
-              soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, altY));
-              soldier.facing = prefSignY > 0 ? -Math.PI / 2 : Math.PI / 2;
-              return true;
-            }
-            return false;
-          };
+          const avoidAngle = angle + soldier.avoidDir * (Math.PI / 2.5);
+          const avoidStepX = soldier.x + Math.cos(avoidAngle) * moveDist * 0.9;
+          const avoidStepY = soldier.y + Math.sin(avoidAngle) * moveDist * 0.9;
 
-          // Helper to try horizontal slide (along X)
-          const trySlideX = (): boolean => {
-            const prefSignX = diffX >= 0 ? 1 : -1;
-            const candX = soldier.x + prefSignX * moveSpeed;
-            if (!getObstacleAt(candX, soldier.y, targetEntity.id)) {
-              soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, candX));
-              soldier.facing = prefSignX > 0 ? 0 : Math.PI;
-              return true;
-            }
-            // Try opposite direction along X
-            const altX = soldier.x - prefSignX * moveSpeed;
-            if (!getObstacleAt(altX, soldier.y, targetEntity.id)) {
-              soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, altX));
-              soldier.facing = prefSignX > 0 ? Math.PI : 0;
-              return true;
-            }
-            return false;
-          };
-
-          // If predominantly moving horizontally, slide vertically first to bypass the wall
-          if (Math.abs(diffX) >= Math.abs(diffY)) {
-            moved = trySlideY() || trySlideX();
+          if (!checkObstacle(avoidStepX, avoidStepY)) {
+            soldier.x = Math.max(20, Math.min(validFieldWidth - 20, avoidStepX));
+            soldier.y = Math.max(30, Math.min(validFieldHeight - 30, avoidStepY));
           } else {
-            moved = trySlideX() || trySlideY();
-          }
-
-          if (!moved) {
-            // Detour angle scan as secondary fallback
-            const candidateAngles = [
-              baseAngle + (60 * Math.PI) / 180,
-              baseAngle - (60 * Math.PI) / 180,
-              baseAngle + (100 * Math.PI) / 180,
-              baseAngle - (100 * Math.PI) / 180,
-            ];
-            for (const ang of candidateAngles) {
-              const cx = soldier.x + Math.cos(ang) * moveSpeed;
-              const cy = soldier.y + Math.sin(ang) * moveSpeed;
-              if (!getObstacleAt(cx, cy, targetEntity.id)) {
-                soldier.facing = ang;
-                soldier.x = Math.max(20, Math.min(FIELD_WIDTH - 20, cx));
-                soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, cy));
-                moved = true;
-                break;
-              }
-            }
-          }
-
-          if (moved) {
-            soldier.stuckTimer = 0;
-          } else {
-            soldier.stuckTimer = (soldier.stuckTimer || 0) + deltaTime;
-            // Deadlock breaker: small lateral nudge if pinched
-            if (soldier.stuckTimer > 0.25) {
-              const nudgeSign = (soldier.id.charCodeAt(0) % 2 === 0 ? 1 : -1);
-              soldier.y = Math.max(30, Math.min(FIELD_HEIGHT - 30, soldier.y + nudgeSign * 2));
-              soldier.stuckTimer = 0;
+            // Try opposite direction
+            soldier.avoidDir = -soldier.avoidDir;
+            const altAngle = angle + soldier.avoidDir * (Math.PI / 2.5);
+            const altX = soldier.x + Math.cos(altAngle) * moveDist * 0.9;
+            const altY = soldier.y + Math.sin(altAngle) * moveDist * 0.9;
+            if (!checkObstacle(altX, altY)) {
+              soldier.x = Math.max(20, Math.min(validFieldWidth - 20, altX));
+              soldier.y = Math.max(30, Math.min(validFieldHeight - 30, altY));
             }
           }
         }
       }
     }
+
+    if (soldier.attackAnimTimer && soldier.attackAnimTimer > 0) {
+      soldier.attackAnimTimer -= deltaTime;
+      if (soldier.attackAnimTimer <= 0) {
+        soldier.isAttacking = false;
+      }
+    }
+
+    // Failsafe recovery against NaN coordinates to prevent vanishing soldiers
+    if (isNaN(soldier.x) || isNaN(soldier.y)) {
+      soldier.x = isPlayer ? 120 : validFieldWidth - 120;
+      soldier.y = validFieldHeight / 2;
+    }
   }
 
-  // 7. Structure Destruction Events
+  // 8. Clean up destroyed structures
   for (let i = structures.length - 1; i >= 0; i--) {
     const st = structures[i];
     if (st.hp <= 0) {
@@ -843,7 +869,7 @@ export function updateGameStep(
       addExplosion(st.x, st.y, '#ef4444', 10, 'spark');
 
       if (st.type.includes('wall')) {
-        if (st.team === 'enemy') stats.wallsDestroyedByPlayer++;
+        if (st.team !== 'player') stats.wallsDestroyedByPlayer++;
         else stats.wallsDestroyedByEnemy++;
       }
 
@@ -857,29 +883,26 @@ export function updateGameStep(
     }
   }
 
-  // 8. Clean up dead soldiers & Queue for 15-second respawn + Give Player Gold
+  // 9. Clean up dead soldiers & Queue for 15-second respawn + Give Gold Bounties
   for (let i = soldiers.length - 1; i >= 0; i--) {
     const s = soldiers[i];
     if (s.hp <= 0) {
       addExplosion(s.x, s.y, '#991b1b', 8, 'smoke');
 
-      if (s.team === 'enemy') {
+      if (s.team !== 'player') {
         stats.soldiersKilledByPlayer++;
-        // Award Player Gold bounty! (相手の兵を倒すと予算もらえるように)
         if (onEnemyKilled) {
           onEnemyKilled(s.x, s.y, KILL_BOUNTY_GOLD);
         }
         addDamageFloater(s.x, s.y - 12, KILL_BOUNTY_GOLD, '#facc15', '+金');
       } else {
         stats.soldiersKilledByEnemy++;
-        // Award Enemy CPU Gold bounty! (お金や爆弾の扱いも同じように)
         if (onPlayerKilled) {
           onPlayerKilled(s.x, s.y, KILL_BOUNTY_GOLD);
         }
         addDamageFloater(s.x, s.y - 12, KILL_BOUNTY_GOLD, '#f87171', '+敵軍金');
       }
 
-      // Queue for 15-Second Respawn (やられた兵は15秒で復活)
       newRespawnQueue.push({
         id: Math.random().toString(),
         type: s.type,
@@ -892,18 +915,18 @@ export function updateGameStep(
     }
   }
 
-  // 9. Update Particles
+  // 10. Update Particles
   for (let i = newParticles.length - 1; i >= 0; i--) {
     const p = newParticles[i];
-    p.life -= deltaTime;
     p.x += p.vx;
     p.y += p.vy;
+    p.life -= deltaTime;
     if (p.life <= 0) {
       newParticles.splice(i, 1);
     }
   }
 
-  // 10. Update Damage Float Numbers
+  // 11. Update Floating Damage Numbers
   for (let i = newDamageNumbers.length - 1; i >= 0; i--) {
     const d = newDamageNumbers[i];
     d.y -= 25 * deltaTime;
@@ -913,40 +936,41 @@ export function updateGameStep(
     }
   }
 
-  // 11. Win / Defeat condition
+  // 12. Win / Defeat condition
   let winner: Winner = null;
-  const currentEnemyHonjin = structures.find(s => s.team === 'enemy' && s.objectiveType === 'honjin');
   const currentPlayerHonjin = structures.find(s => s.team === 'player' && s.objectiveType === 'honjin');
+  const enemyHonjins = structures.filter(s => s.team !== 'player' && s.objectiveType === 'honjin');
 
-  if (currentEnemyHonjin && currentEnemyHonjin.hp <= 0) {
-    winner = 'player';
-    stats.endReason = 'honjin_destroyed';
-  } else if (currentPlayerHonjin && currentPlayerHonjin.hp <= 0) {
+  if (currentPlayerHonjin && currentPlayerHonjin.hp <= 0) {
     winner = 'enemy';
     stats.endReason = 'honjin_destroyed';
-  } else if (battleElapsedSeconds >= BATTLE_TIME_LIMIT) {
-    // 3分経っても決着つかない場合はその時点でそれぞれの軍の3の丸2の丸本陣の体力を合計して多い方が勝ち(どちらも同じならひきわけ)
-    const pMaru1 = structures.find(s => s.team === 'player' && s.objectiveType === 'maru_1');
-    const pMaru2 = structures.find(s => s.team === 'player' && s.objectiveType === 'maru_2');
-    const playerTotalHp =
-      Math.max(0, currentPlayerHonjin?.hp || 0) +
-      Math.max(0, pMaru1?.hp || 0) +
-      Math.max(0, pMaru2?.hp || 0);
-
-    const eMaru1 = structures.find(s => s.team === 'enemy' && s.objectiveType === 'maru_1');
-    const eMaru2 = structures.find(s => s.team === 'enemy' && s.objectiveType === 'maru_2');
-    const enemyTotalHp =
-      Math.max(0, currentEnemyHonjin?.hp || 0) +
-      Math.max(0, eMaru1?.hp || 0) +
-      Math.max(0, eMaru2?.hp || 0);
-
-    stats.playerTotalHp = playerTotalHp;
-    stats.enemyTotalHp = enemyTotalHp;
+  } else if (enemyHonjins.length > 0 && enemyHonjins.every(h => h.hp <= 0)) {
+    winner = 'player';
+    stats.endReason = 'honjin_destroyed';
+  } else if (battleElapsedSeconds >= battleTimeLimit) {
     stats.endReason = 'time_limit';
 
-    if (playerTotalHp > enemyTotalHp) {
+    // Calculate total base HP for each team
+    const teamHps: Record<string, number> = {};
+    for (const team of allTeams) {
+      const hHonjin = structures.find(s => s.team === team && s.objectiveType === 'honjin');
+      const hMaru1 = structures.find(s => s.team === team && s.objectiveType === 'maru_1');
+      const hMaru2 = structures.find(s => s.team === team && s.objectiveType === 'maru_2');
+      const totalHp =
+        Math.max(0, hHonjin?.hp || 0) +
+        Math.max(0, hMaru1?.hp || 0) +
+        Math.max(0, hMaru2?.hp || 0);
+      teamHps[team] = totalHp;
+    }
+
+    stats.playerTotalHp = teamHps['player'] || 0;
+    const opponentTeams = Object.keys(teamHps).filter(t => t !== 'player');
+    const maxOpponentHp = Math.max(0, ...opponentTeams.map(t => teamHps[t] || 0));
+    stats.enemyTotalHp = maxOpponentHp;
+
+    if (stats.playerTotalHp > maxOpponentHp) {
       winner = 'player';
-    } else if (enemyTotalHp > playerTotalHp) {
+    } else if (maxOpponentHp > stats.playerTotalHp) {
       winner = 'enemy';
     } else {
       winner = 'draw';

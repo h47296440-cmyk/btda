@@ -1,4 +1,15 @@
-export type Team = 'player' | 'enemy';
+export type Team =
+  | 'player'
+  | 'enemy'
+  | 'enemy_1'
+  | 'enemy_2'
+  | 'enemy_3'
+  | 'enemy_4'
+  | 'enemy_5'
+  | 'enemy_6'
+  | 'enemy_7';
+
+export type GameMode = '2_nations' | '4_nations' | '8_nations';
 
 export type SoldierStance = 'attack' | 'defense' | 'hybrid';
 
@@ -9,6 +20,40 @@ export type TurretType = 'arrow_tower' | 'cannon_battery' | 'catapult' | 'fire_t
 export type SoldierType = 'samurai' | 'archer' | 'sapper' | 'cavalry';
 
 export type StructureType = MaterialType | TurretType | 'honjin' | 'maru_1' | 'maru_2';
+
+export interface TerrainZone {
+  id: string;
+  type: 'swamp' | 'ice';
+  name: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  color: string;
+}
+
+export interface RallyPoint {
+  x: number;
+  y: number;
+  timestamp: number;
+  active: boolean;
+}
+
+export interface NationConfig {
+  id: Team;
+  name: string;
+  leader: string;
+  color: string;
+  accentColor: string;
+  kanji: string;
+  isPlayer: boolean;
+  buildZone: { minX: number; maxX: number; minY: number; maxY: number };
+  basePos: {
+    honjin: { x: number; y: number };
+    maru1: { x: number; y: number };
+    maru2: { x: number; y: number };
+  };
+}
 
 export interface Structure {
   id: string;
@@ -57,6 +102,8 @@ export interface Soldier {
   attackAnimTimer?: number;
   avoidDir?: number; // Preference direction (+1 or -1) when steering around obstacles
   stuckTimer?: number; // Track duration near obstacles to resolve deadlocks
+  waypointPath?: { x: number; y: number }[]; // Player march path guidance
+  rallyTarget?: { x: number; y: number } | null; // Rally beacon gathering target
 }
 
 export interface Projectile {

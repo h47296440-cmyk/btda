@@ -1,4 +1,4 @@
-import { Structure, Soldier, SoldierType, SoldierStance, MaterialType, TurretType } from './types';
+import { Structure, Soldier, SoldierType, SoldierStance, MaterialType, TurretType, Team } from './types';
 import {
   STARTING_BUDGET,
   WALL_DEFS,
@@ -24,14 +24,49 @@ export interface EnemyTacticalCommand {
   bannerMessage?: string;
 }
 
+export interface EnemySetupOptions {
+  startingBudget?: number;
+  seed?: number;
+  team?: Team;
+  buildZone?: { minX: number; maxX: number; minY: number; maxY: number };
+  basePos?: {
+    honjin: { x: number; y: number };
+    maru1: { x: number; y: number };
+    maru2: { x: number; y: number };
+  };
+  fieldWidth?: number;
+  fieldHeight?: number;
+}
+
 /**
  * Procedural Dynamic AI Castle Builder
- * Mathematically calculates fortifications, choke points, turrets, and armies within the exact player budget.
+ * Mathematically calculates fortifications, choke points, turrets, and armies within the exact budget.
+ * Supports any team, quadrant, and map dimensions.
  */
 export function generateEnemySetup(
-  startingBudget: number = STARTING_BUDGET,
-  seed?: number
+  budgetOrOptions?: number | EnemySetupOptions,
+  legacySeed?: number
 ): EnemyCastleBuildResult {
+  let opts: EnemySetupOptions = {};
+  if (typeof budgetOrOptions === 'number') {
+    opts = { startingBudget: budgetOrOptions, seed: legacySeed };
+  } else if (budgetOrOptions) {
+    opts = budgetOrOptions;
+  }
+
+  const startingBudget = opts.startingBudget ?? STARTING_BUDGET;
+  const seed = opts.seed;
+  const team: Team = opts.team ?? 'enemy';
+  const fWidth = opts.fieldWidth ?? FIELD_WIDTH;
+  const fHeight = opts.fieldHeight ?? FIELD_HEIGHT;
+
+  const bZone = opts.buildZone ?? ENEMY_BUILD_ZONE;
+  const bPos = opts.basePos ?? {
+    honjin: { x: 1140, y: fHeight / 2 },
+    maru1: { x: 980, y: 190 },
+    maru2: { x: 980, y: fHeight - 190 },
+  };
+
   const structures: Structure[] = [];
   const soldiers: Soldier[] = [];
   let budget = startingBudget;
@@ -52,7 +87,7 @@ export function generateEnemySetup(
     },
     {
       id: 'crimson_rush',
-      name: '疾風怒濤・騎馬猛攻軍団',
+      name: '疾風怒濤・突撃猛攻軍団',
       bombPriority: true,
       wallRatio: 0.22,
       turretRatio: 0.25,
@@ -114,7 +149,7 @@ export function generateEnemySetup(
 
   const profileIdx =
     seed !== undefined
-      ? seed % archetypes.length
+      ? Math.abs(seed) % archetypes.length
       : Math.floor(Math.random() * archetypes.length);
   const profile = archetypes[profileIdx];
 
@@ -128,9 +163,9 @@ export function generateEnemySetup(
   // Placement Helpers
   const isOccupied = (x: number, y: number, radius: number) => {
     // Check overlap with objectives
-    const maru1 = { x: 980, y: 190, r: 40 };
-    const maru2 = { x: 980, y: FIELD_HEIGHT - 190, r: 40 };
-    const honjin = { x: 1140, y: FIELD_HEIGHT / 2, r: 50 };
+    const maru1 = { x: bPos.maru1.x, y: bPos.maru1.y, r: 40 };
+    const maru2 = { x: bPos.maru2.x, y: bPos.maru2.y, r: 40 };
+    const honjin = { x: bPos.honjin.x, y: bPos.honjin.y, r: 50 };
     if (Math.hypot(x - maru1.x, y - maru1.y) < radius + maru1.r) return true;
     if (Math.hypot(x - maru2.x, y - maru2.y) < radius + maru2.r) return true;
     if (Math.hypot(x - honjin.x, y - honjin.y) < radius + honjin.r) return true;
@@ -147,15 +182,15 @@ export function generateEnemySetup(
   const addWall = (x: number, y: number, type: MaterialType): boolean => {
     const def = WALL_DEFS[type];
     if (budget < def.cost) return false;
-    const clampedX = Math.max(ENEMY_BUILD_ZONE.minX + 18, Math.min(ENEMY_BUILD_ZONE.maxX - 18, x));
-    const clampedY = Math.max(ENEMY_BUILD_ZONE.minY + 18, Math.min(ENEMY_BUILD_ZONE.maxY - 18, y));
+    const clampedX = Math.max(bZone.minX + 18, Math.min(bZone.maxX - 18, x));
+    const clampedY = Math.max(bZone.minY + 18, Math.min(bZone.maxY - 18, y));
     if (isOccupied(clampedX, clampedY, 16)) return false;
 
     budget -= def.cost;
     structures.push({
-      id: 'enemy_wall_' + Math.random().toString(36).substring(2, 9),
+      id: `${team}_wall_${Math.random().toString(36).substring(2, 9)}`,
       type,
-      team: 'enemy',
+      team,
       x: clampedX,
       y: clampedY,
       width: 36,
@@ -171,15 +206,15 @@ export function generateEnemySetup(
   const addTurret = (x: number, y: number, type: TurretType): boolean => {
     const def = TURRET_DEFS[type];
     if (budget < def.cost) return false;
-    const clampedX = Math.max(ENEMY_BUILD_ZONE.minX + 25, Math.min(ENEMY_BUILD_ZONE.maxX - 25, x));
-    const clampedY = Math.max(ENEMY_BUILD_ZONE.minY + 25, Math.min(ENEMY_BUILD_ZONE.maxY - 25, y));
+    const clampedX = Math.max(bZone.minX + 25, Math.min(bZone.maxX - 25, x));
+    const clampedY = Math.max(bZone.minY + 25, Math.min(bZone.maxY - 25, y));
     if (isOccupied(clampedX, clampedY, 22)) return false;
 
     budget -= def.cost;
     structures.push({
-      id: 'enemy_turret_' + Math.random().toString(36).substring(2, 9),
+      id: `${team}_turret_${Math.random().toString(36).substring(2, 9)}`,
       type,
-      team: 'enemy',
+      team,
       x: clampedX,
       y: clampedY,
       width: 44,
@@ -199,14 +234,14 @@ export function generateEnemySetup(
   const addSoldier = (x: number, y: number, type: SoldierType, stance: SoldierStance): boolean => {
     const def = SOLDIER_DEFS[type];
     if (budget < def.cost) return false;
-    const clampedX = Math.max(ENEMY_BUILD_ZONE.minX + 20, Math.min(ENEMY_BUILD_ZONE.maxX - 20, x));
-    const clampedY = Math.max(ENEMY_BUILD_ZONE.minY + 20, Math.min(ENEMY_BUILD_ZONE.maxY - 20, y));
+    const clampedX = Math.max(bZone.minX + 20, Math.min(bZone.maxX - 20, x));
+    const clampedY = Math.max(bZone.minY + 20, Math.min(bZone.maxY - 20, y));
 
     budget -= def.cost;
     soldiers.push({
-      id: 'enemy_sol_' + Math.random().toString(36).substring(2, 9),
+      id: `${team}_sol_${Math.random().toString(36).substring(2, 9)}`,
       type,
-      team: 'enemy',
+      team,
       stance,
       x: clampedX,
       y: clampedY,
@@ -225,118 +260,209 @@ export function generateEnemySetup(
       siegeMultiplier: type === 'sapper' ? 3.5 : 1.0,
       cost: def.cost,
       kills: 0,
-      facing: Math.PI,
+      facing: Math.atan2(fHeight / 2 - clampedY, fWidth / 2 - clampedX),
     });
     return true;
   };
+
+  // Direction pointing toward map center
+  const centerX = fWidth / 2;
+  const centerY = fHeight / 2;
+  const dirX = centerX - bPos.honjin.x;
+  const dirY = centerY - bPos.honjin.y;
+  const dirLen = Math.hypot(dirX, dirY) || 1;
+  const nx = dirX / dirLen;
+  const ny = dirY / dirLen;
+  const px = -ny;
+  const py = nx;
 
   // 2. Procedural Fortification Construction (Wall Budget Allocation)
   const targetWallBudget = startingBudget * profile.wallRatio;
   let spentWallBudget = 0;
 
-  // Geometry: Build protective outer front ramparts around Ninomaru (top) and Sannomaru (bottom)
-  const frontWallX = 910 + Math.floor(Math.random() * 25);
-  // Top Maru defensive arc
-  for (let y = 110; y <= 270; y += 38) {
-    if (spentWallBudget >= targetWallBudget) break;
-    const wallType = Math.random() < 0.25 ? profile.secondaryWall : profile.preferredWall;
-    if (addWall(frontWallX, y, wallType)) {
-      spentWallBudget += WALL_DEFS[wallType].cost;
+  // Front ramparts protecting Maru 1 (2 layers)
+  for (let layer = 0; layer < 2; layer++) {
+    const distOffset = 52 + layer * 36;
+    const m1FrontX = bPos.maru1.x + nx * distOffset;
+    const m1FrontY = bPos.maru1.y + ny * distOffset;
+    for (let d = -76; d <= 76; d += 38) {
+      if (spentWallBudget >= targetWallBudget) break;
+      const wallType = Math.random() < 0.25 ? profile.secondaryWall : profile.preferredWall;
+      if (addWall(m1FrontX + px * d, m1FrontY + py * d, wallType)) {
+        spentWallBudget += WALL_DEFS[wallType].cost;
+      }
     }
   }
 
-  // Bottom Maru defensive arc
-  for (let y = FIELD_HEIGHT - 270; y <= FIELD_HEIGHT - 110; y += 38) {
-    if (spentWallBudget >= targetWallBudget) break;
-    const wallType = Math.random() < 0.25 ? profile.secondaryWall : profile.preferredWall;
-    if (addWall(frontWallX, y, wallType)) {
-      spentWallBudget += WALL_DEFS[wallType].cost;
+  // Front ramparts protecting Maru 2 (2 layers)
+  for (let layer = 0; layer < 2; layer++) {
+    const distOffset = 52 + layer * 36;
+    const m2FrontX = bPos.maru2.x + nx * distOffset;
+    const m2FrontY = bPos.maru2.y + ny * distOffset;
+    for (let d = -76; d <= 76; d += 38) {
+      if (spentWallBudget >= targetWallBudget) break;
+      const wallType = Math.random() < 0.25 ? profile.secondaryWall : profile.preferredWall;
+      if (addWall(m2FrontX + px * d, m2FrontY + py * d, wallType)) {
+        spentWallBudget += WALL_DEFS[wallType].cost;
+      }
     }
   }
 
-  // Honjin Inner Redoubt Barricade
-  const honjinWallX = 1100 + Math.floor(Math.random() * 20);
-  for (let y = FIELD_HEIGHT / 2 - 45; y <= FIELD_HEIGHT / 2 + 45; y += 40) {
-    if (spentWallBudget >= targetWallBudget) break;
-    const wallType = profile.secondaryWall || profile.preferredWall;
-    if (addWall(honjinWallX, y, wallType)) {
-      spentWallBudget += WALL_DEFS[wallType].cost;
+  // Inner Redoubt Barricades in front and flanks of Honjin
+  for (let layer = 0; layer < 2; layer++) {
+    const honjinFrontX = bPos.honjin.x + nx * (48 + layer * 36);
+    const honjinFrontY = bPos.honjin.y + ny * (48 + layer * 36);
+    for (let d = -60; d <= 60; d += 38) {
+      if (spentWallBudget >= targetWallBudget) break;
+      const wallType = profile.secondaryWall || profile.preferredWall;
+      if (addWall(honjinFrontX + px * d, honjinFrontY + py * d, wallType)) {
+        spentWallBudget += WALL_DEFS[wallType].cost;
+      }
     }
-  }
-
-  // Choke point side spurs
-  if (spentWallBudget < targetWallBudget) {
-    addWall(frontWallX + 40, 100, profile.preferredWall);
-    addWall(frontWallX + 40, FIELD_HEIGHT - 100, profile.preferredWall);
   }
 
   // 3. Procedural Turret Placement (Turret Budget Allocation)
   const targetTurretBudget = startingBudget * profile.turretRatio;
   let spentTurretBudget = 0;
 
-  // Primary tactical turret anchor positions
   const turretSlots = [
-    { x: 975, y: 110, defaultType: profile.preferredTurrets[0] || 'arrow_tower' },
-    { x: 975, y: FIELD_HEIGHT - 110, defaultType: profile.preferredTurrets[0] || 'arrow_tower' },
-    { x: 1060, y: FIELD_HEIGHT / 2 - 70, defaultType: profile.preferredTurrets[1] || 'fire_tower' },
-    { x: 1060, y: FIELD_HEIGHT / 2 + 70, defaultType: profile.preferredTurrets[1] || 'fire_tower' },
-    { x: 1150, y: FIELD_HEIGHT / 2 - 80, defaultType: profile.preferredTurrets[2] || 'catapult' },
-    { x: 1150, y: FIELD_HEIGHT / 2 + 80, defaultType: profile.preferredTurrets[2] || 'cannon_battery' },
+    {
+      x: bPos.maru1.x + px * 46 + nx * 24,
+      y: bPos.maru1.y + py * 46 + ny * 24,
+      defaultType: profile.preferredTurrets[0] || 'arrow_tower',
+    },
+    {
+      x: bPos.maru1.x - px * 46 + nx * 24,
+      y: bPos.maru1.y - py * 46 + ny * 24,
+      defaultType: profile.preferredTurrets[1] || 'fire_tower',
+    },
+    {
+      x: bPos.maru2.x + px * 46 + nx * 24,
+      y: bPos.maru2.y + py * 46 + ny * 24,
+      defaultType: profile.preferredTurrets[0] || 'arrow_tower',
+    },
+    {
+      x: bPos.maru2.x - px * 46 + nx * 24,
+      y: bPos.maru2.y - py * 46 + ny * 24,
+      defaultType: profile.preferredTurrets[1] || 'fire_tower',
+    },
+    {
+      x: bPos.honjin.x + px * 64 + nx * 32,
+      y: bPos.honjin.y + py * 64 + ny * 32,
+      defaultType: profile.preferredTurrets[1] || 'fire_tower',
+    },
+    {
+      x: bPos.honjin.x - px * 64 + nx * 32,
+      y: bPos.honjin.y - py * 64 + ny * 32,
+      defaultType: profile.preferredTurrets[1] || 'fire_tower',
+    },
+    {
+      x: bPos.honjin.x + nx * 90,
+      y: bPos.honjin.y + ny * 90,
+      defaultType: profile.preferredTurrets[2] || 'cannon_battery',
+    },
+    {
+      x: bPos.honjin.x + px * 36 - nx * 30,
+      y: bPos.honjin.y + py * 36 - ny * 30,
+      defaultType: profile.preferredTurrets[0] || 'arrow_tower',
+    },
+    {
+      x: bPos.honjin.x - px * 36 - nx * 30,
+      y: bPos.honjin.y - py * 36 - ny * 30,
+      defaultType: profile.preferredTurrets[0] || 'arrow_tower',
+    },
+    {
+      x: (bPos.maru1.x + bPos.honjin.x) / 2 + nx * 35,
+      y: (bPos.maru1.y + bPos.honjin.y) / 2 + ny * 35,
+      defaultType: profile.preferredTurrets[2] || 'catapult',
+    },
+    {
+      x: (bPos.maru2.x + bPos.honjin.x) / 2 + nx * 35,
+      y: (bPos.maru2.y + bPos.honjin.y) / 2 + ny * 35,
+      defaultType: profile.preferredTurrets[2] || 'catapult',
+    },
   ];
 
   for (const slot of turretSlots) {
-    if (spentTurretBudget >= targetTurretBudget) break;
+    if (spentTurretBudget >= targetTurretBudget && budget < 250) break;
     const turretType = slot.defaultType;
     if (addTurret(slot.x, slot.y, turretType)) {
       spentTurretBudget += TURRET_DEFS[turretType].cost;
     }
   }
 
-  // 4. Procedural Army Recruitment (Remaining Budget Allocation)
-  // Recruit balanced or specialized army based on profile preferences
+  // 4. Procedural Army Recruitment (ALL Remaining Budget Allocated Exhaustively)
   let soldierIdx = 0;
-  while (budget >= 110) {
-    const soldierType = profile.soldierPref[soldierIdx % profile.soldierPref.length];
-    const def = SOLDIER_DEFS[soldierType];
+  let safetyAttempts = 0;
 
-    if (budget < def.cost) {
-      // If cannot afford preferred, try cheapest available soldier (archer: 110 or sapper: 130)
-      if (budget >= 110) {
-        const fallbackType: SoldierType = budget >= 140 ? 'samurai' : budget >= 130 ? 'sapper' : 'archer';
-        const stance: SoldierStance = fallbackType === 'sapper' ? 'attack' : profile.defaultStance;
-        addSoldier(880 + Math.random() * 80, FIELD_HEIGHT / 2 + (Math.random() * 280 - 140), fallbackType, stance);
-      }
-      break;
+  // Keep hiring until budget cannot afford even the cheapest soldier (Samurai 75G)
+  while (budget >= 75 && safetyAttempts < 350) {
+    safetyAttempts++;
+
+    // Find affordable soldier types among preferred, or fallback to any affordable
+    const affordablePrefs = profile.soldierPref.filter(t => SOLDIER_DEFS[t].cost <= budget);
+    let soldierType: SoldierType;
+
+    if (affordablePrefs.length > 0) {
+      soldierType = affordablePrefs[soldierIdx % affordablePrefs.length];
+    } else {
+      // Pick highest affordable soldier to consume budget efficiently
+      if (budget >= 140) soldierType = 'cavalry';
+      else if (budget >= 110) soldierType = 'sapper';
+      else if (budget >= 85) soldierType = 'archer';
+      else if (budget >= 75) soldierType = 'samurai';
+      else break;
     }
 
-    // Determine initial tactical spawn location and stance based on unit role
-    let spawnX = 880;
-    let spawnY = FIELD_HEIGHT / 2;
+    const def = SOLDIER_DEFS[soldierType];
+    if (budget < def.cost) {
+      if (budget < 75) break;
+      continue;
+    }
+
+    // Determine formation spawn coordinates
+    let spawnX = bPos.honjin.x + nx * 80;
+    let spawnY = bPos.honjin.y + ny * 80;
     let stance = profile.defaultStance;
 
+    const row = Math.floor(soldierIdx / 6);
+    const col = (soldierIdx % 6) - 2.5;
+
     if (soldierType === 'cavalry') {
-      spawnX = 860 + Math.random() * 30;
-      spawnY = soldierIdx % 2 === 0 ? 160 + Math.random() * 80 : FIELD_HEIGHT - (160 + Math.random() * 80);
+      // Cavalry on the flanks, aggressive vanguard
+      const flankSign = (soldierIdx % 2 === 0 ? 1 : -1);
+      spawnX = bPos.honjin.x + nx * (85 + row * 22) + px * (flankSign * (70 + Math.abs(col) * 16));
+      spawnY = bPos.honjin.y + ny * (85 + row * 22) + py * (flankSign * (70 + Math.abs(col) * 16));
       stance = 'attack';
     } else if (soldierType === 'sapper') {
-      spawnX = 850 + Math.random() * 30;
-      spawnY = FIELD_HEIGHT / 2 + (Math.random() * 160 - 80);
+      // Sappers forward
+      spawnX = bPos.honjin.x + nx * (65 + row * 18) + px * (col * 24);
+      spawnY = bPos.honjin.y + ny * (65 + row * 18) + py * (col * 24);
       stance = 'attack';
     } else if (soldierType === 'archer') {
-      spawnX = 940 + Math.random() * 80;
-      spawnY = soldierIdx % 2 === 0 ? 190 : FIELD_HEIGHT - 190;
+      // Archers entrenched near Maru and Honjin
+      const baseAnchor = soldierIdx % 2 === 0 ? bPos.maru1 : bPos.maru2;
+      spawnX = baseAnchor.x - nx * 10 + px * (col * 18);
+      spawnY = baseAnchor.y - ny * 10 + py * (col * 18);
       stance = profile.defaultStance === 'attack' ? 'hybrid' : 'defense';
     } else {
-      // Samurai
-      spawnX = 900 + Math.random() * 60;
-      spawnY = soldierIdx % 2 === 0 ? 210 : FIELD_HEIGHT - 210;
+      // Samurai core infantry formation
+      const baseAnchor = soldierIdx % 3 === 0 ? bPos.maru1 : soldierIdx % 3 === 1 ? bPos.maru2 : bPos.honjin;
+      spawnX = baseAnchor.x + nx * (35 + row * 16) + px * (col * 20);
+      spawnY = baseAnchor.y + ny * (35 + row * 16) + py * (col * 20);
       stance = profile.defaultStance;
     }
 
+    // Try placing at intended position, or fallback to random spot within build zone
     if (addSoldier(spawnX, spawnY, soldierType, stance)) {
       soldierIdx++;
     } else {
-      soldierIdx++;
+      // Scatter placement within valid zone
+      const rx = bZone.minX + 25 + Math.random() * (bZone.maxX - bZone.minX - 50);
+      const ry = bZone.minY + 25 + Math.random() * (bZone.maxY - bZone.minY - 50);
+      if (addSoldier(rx, ry, soldierType, stance)) {
+        soldierIdx++;
+      }
     }
   }
 
@@ -357,25 +483,26 @@ export function evaluateEnemyTacticalStance(
   soldiers: Soldier[],
   structures: Structure[],
   currentEnemyStance: SoldierStance,
-  battleTime: number
+  battleTime: number,
+  enemyTeam: Team = 'enemy'
 ): EnemyTacticalCommand | null {
-  const livingEnemySoldiers = soldiers.filter(s => s.team === 'enemy' && s.hp > 0);
-  const livingPlayerSoldiers = soldiers.filter(s => s.team === 'player' && s.hp > 0);
+  const livingEnemySoldiers = soldiers.filter(s => s.team === enemyTeam && s.hp > 0);
+  const livingOpponentSoldiers = soldiers.filter(s => s.team !== enemyTeam && s.hp > 0);
   if (livingEnemySoldiers.length === 0) return null;
 
-  // 1. Condition: Threat to Home Base (CRISIS / DEFENSE)
-  // Check if player units have infiltrated enemy territory (x >= 780)
-  const invaders = livingPlayerSoldiers.filter(s => s.x >= 760);
-  const enemyHonjin = structures.find(s => s.team === 'enemy' && s.objectiveType === 'honjin');
+  const enemyHonjin = structures.find(s => s.team === enemyTeam && s.objectiveType === 'honjin');
   const enemyMaruUnderAttack = structures.some(
-    s => s.team === 'enemy' && (s.objectiveType === 'maru_1' || s.objectiveType === 'maru_2') && s.hp < s.maxHp * 0.45 && s.hp > 0
+    s => s.team === enemyTeam && (s.objectiveType === 'maru_1' || s.objectiveType === 'maru_2') && s.hp < s.maxHp * 0.45 && s.hp > 0
   );
   const isHonjinUnderAttack = enemyHonjin && !enemyHonjin.isInvulnerable && enemyHonjin.hp < enemyHonjin.maxHp;
 
-  if ((invaders.length >= 2 || isHonjinUnderAttack || enemyMaruUnderAttack) && currentEnemyStance !== 'defense') {
-    // Switch defenders & archers to Defense to eliminate intruders
+  // Invaders near this team's Honjin or Maru
+  const nearbyInvaders = enemyHonjin
+    ? livingOpponentSoldiers.filter(s => Math.hypot(s.x - enemyHonjin.x, s.y - enemyHonjin.y) < 320)
+    : [];
+
+  if ((nearbyInvaders.length >= 2 || isHonjinUnderAttack || enemyMaruUnderAttack) && currentEnemyStance !== 'defense') {
     const newStances = livingEnemySoldiers.map(soldier => {
-      // Sappers maintain siege or hybrid, others rush to defend
       if (soldier.type === 'sapper') return { id: soldier.id, stance: 'attack' as SoldierStance };
       return { id: soldier.id, stance: 'defense' as SoldierStance };
     });
@@ -388,15 +515,14 @@ export function evaluateEnemyTacticalStance(
   }
 
   // 2. Condition: Offensive Breakthrough (ALL-OUT ATTACK / 突撃号令)
-  // Check if player Maru 1 or 2 is destroyed, or enemy has heavy soldier numerical superiority
   const playerMaruDestroyed = structures.filter(
     s => s.team === 'player' && (s.objectiveType === 'maru_1' || s.objectiveType === 'maru_2') && s.hp <= 0
   ).length;
 
   const playerHonjinExposed = playerMaruDestroyed >= 2;
-  const numericalAdvantage = livingEnemySoldiers.length >= livingPlayerSoldiers.length * 1.4 && invaders.length === 0;
+  const numericalAdvantage = livingEnemySoldiers.length >= livingOpponentSoldiers.length * 1.3 && nearbyInvaders.length === 0;
 
-  if ((playerHonjinExposed || playerMaruDestroyed >= 1 || numericalAdvantage) && currentEnemyStance !== 'attack' && invaders.length === 0) {
+  if ((playerHonjinExposed || playerMaruDestroyed >= 1 || numericalAdvantage) && currentEnemyStance !== 'attack' && nearbyInvaders.length === 0) {
     const newStances = livingEnemySoldiers.map(soldier => ({
       id: soldier.id,
       stance: 'attack' as SoldierStance,
@@ -407,12 +533,12 @@ export function evaluateEnemyTacticalStance(
       overallStance: 'attack',
       bannerMessage: playerHonjinExposed
         ? '【敵将号令】「敵本陣の結界は崩れた！全軍、敵本陣へ総突撃せよ！」'
-        : '【敵将号令】「敵の隙を突け！全軍突撃陣形へ移行！」',
+        : '【敵将号令】「好機到来！全軍突撃陣形へ移行！」',
     };
   }
 
   // 3. Condition: Midfield Stalemate / Flexible Guerrilla (HYBRID / 遊撃作戦)
-  if (currentEnemyStance !== 'hybrid' && invaders.length === 0 && !playerHonjinExposed && Math.abs(livingEnemySoldiers.length - livingPlayerSoldiers.length) <= 2) {
+  if (currentEnemyStance !== 'hybrid' && nearbyInvaders.length === 0 && !playerHonjinExposed) {
     const newStances = livingEnemySoldiers.map(soldier => {
       if (soldier.type === 'cavalry' || soldier.type === 'sapper') {
         return { id: soldier.id, stance: 'attack' as SoldierStance };
@@ -432,30 +558,30 @@ export function evaluateEnemyTacticalStance(
 
 /**
  * AI in-battle Tactical Bomb Evaluation
- * Checks for tight player soldier clusters or players sieging enemy structures.
  */
 export function evaluateEnemyTacticalBomb(
   soldiers: Soldier[],
   structures: Structure[],
   enemyHasBomb: boolean,
   enemyIsBombUsed: boolean,
-  battleTimeSeconds: number
+  battleTimeSeconds: number,
+  enemyTeam: Team = 'enemy'
 ): { targetX: number; targetY: number } | null {
   if (!enemyHasBomb || enemyIsBombUsed || battleTimeSeconds < 12) {
     return null;
   }
 
-  const livingPlayerSoldiers = soldiers.filter(s => s.team === 'player' && s.hp > 0);
-  if (livingPlayerSoldiers.length === 0) return null;
+  const livingOpponentSoldiers = soldiers.filter(s => s.team !== enemyTeam && s.hp > 0);
+  if (livingOpponentSoldiers.length === 0) return null;
 
-  // 1. Check for clusters of player soldiers
+  // 1. Check for clusters of opponents
   let bestCluster: { x: number; y: number; count: number } = { x: 0, y: 0, count: 0 };
 
-  for (const s1 of livingPlayerSoldiers) {
+  for (const s1 of livingOpponentSoldiers) {
     let count = 0;
     let sumX = 0;
     let sumY = 0;
-    for (const s2 of livingPlayerSoldiers) {
+    for (const s2 of livingOpponentSoldiers) {
       if (Math.hypot(s1.x - s2.x, s1.y - s2.y) <= BOMB_CONFIG.radius * 1.1) {
         count++;
         sumX += s2.x;
@@ -467,18 +593,17 @@ export function evaluateEnemyTacticalBomb(
     }
   }
 
-  // If 2 or more player soldiers are grouped, drop bomb
   if (bestCluster.count >= 2) {
     return { targetX: bestCluster.x, targetY: bestCluster.y };
   }
 
-  // 2. Check if player soldiers are attacking enemy Maru or Honjin
-  const threatenedEnemyObjectives = structures.filter(
-    st => st.team === 'enemy' && st.isObjective && st.hp > 0
+  // 2. Check if opponents are attacking this team's objectives
+  const threatenedObjectives = structures.filter(
+    st => st.team === enemyTeam && st.isObjective && st.hp > 0
   );
 
-  for (const obj of threatenedEnemyObjectives) {
-    const attackers = livingPlayerSoldiers.filter(s => Math.hypot(s.x - obj.x, s.y - obj.y) <= 160);
+  for (const obj of threatenedObjectives) {
+    const attackers = livingOpponentSoldiers.filter(s => Math.hypot(s.x - obj.x, s.y - obj.y) <= 160);
     if (attackers.length >= 1) {
       const avgX = attackers.reduce((acc, a) => acc + a.x, 0) / attackers.length;
       const avgY = attackers.reduce((acc, a) => acc + a.y, 0) / attackers.length;
@@ -486,9 +611,9 @@ export function evaluateEnemyTacticalBomb(
     }
   }
 
-  // 3. Fallback: if battle > 35s, target the most advanced player unit
-  if (battleTimeSeconds > 35 && livingPlayerSoldiers.length > 0) {
-    const leadSoldier = [...livingPlayerSoldiers].sort((a, b) => b.x - a.x)[0];
+  // 3. Fallback: if battle > 35s, target a prominent opponent
+  if (battleTimeSeconds > 35 && livingOpponentSoldiers.length > 0) {
+    const leadSoldier = livingOpponentSoldiers[0];
     return { targetX: leadSoldier.x, targetY: leadSoldier.y };
   }
 
@@ -497,60 +622,58 @@ export function evaluateEnemyTacticalBomb(
 
 /**
  * AI in-battle Reinforcements Evaluation
- * Spawns reinforcements using accumulated battle funds gained from kills and starting budget.
  */
 export function evaluateEnemyReinforcements(
   enemyFunds: number,
   soldiers: Soldier[],
   structures: Structure[],
   currentTime: number,
-  lastSpawnTime: number
+  lastSpawnTime: number,
+  enemyTeam: Team = 'enemy'
 ): { type: SoldierType; stance: SoldierStance; cost: number; message: string } | null {
-  if (enemyFunds < 110 || currentTime - lastSpawnTime < 5.0) {
+  if (enemyFunds < 75 || currentTime - lastSpawnTime < 5.0) {
     return null;
   }
 
-  const livingPlayerSoldiers = soldiers.filter(s => s.team === 'player' && s.hp > 0);
+  const livingOpponents = soldiers.filter(s => s.team !== enemyTeam && s.hp > 0);
+  const enemyHonjin = structures.find(s => s.team === enemyTeam && s.objectiveType === 'honjin');
 
-  // If player troops are inside enemy territory, spawn defense samurai or archer
-  const invaders = livingPlayerSoldiers.filter(s => s.x >= 750);
-  if (invaders.length > 0 && enemyFunds >= 140) {
+  const invaders = enemyHonjin
+    ? livingOpponents.filter(s => Math.hypot(s.x - enemyHonjin.x, s.y - enemyHonjin.y) < 280)
+    : [];
+
+  if (invaders.length > 0 && enemyFunds >= 75) {
     return {
       type: 'samurai',
       stance: 'defense',
-      cost: 140,
+      cost: 75,
       message: '【敵軍防衛増援】敵軍が本陣防衛の侍部隊を出撃！',
     };
   }
 
-  // If player base has fallen Maru, spawn aggressive Cavalry or Sapper
-  const playerMaruDown = structures.some(
-    s => s.team === 'player' && s.isObjective && s.objectiveType !== 'honjin' && s.hp <= 0
-  );
-
-  if (playerMaruDown && enemyFunds >= 180) {
+  if (enemyFunds >= 140) {
     return {
       type: 'cavalry',
       stance: 'attack',
-      cost: 180,
+      cost: 140,
       message: '【敵軍突撃増援】敵軍が好機と見て騎馬強襲部隊を出撃！',
     };
   }
 
-  if (enemyFunds >= 130 && Math.random() < 0.5) {
+  if (enemyFunds >= 110 && Math.random() < 0.5) {
     return {
       type: 'sapper',
       stance: 'attack',
-      cost: 130,
+      cost: 110,
       message: '【敵軍破城増援】敵軍が工兵部隊を出撃！',
     };
   }
 
-  if (enemyFunds >= 110) {
+  if (enemyFunds >= 85) {
     return {
       type: 'archer',
       stance: 'hybrid',
-      cost: 110,
+      cost: 85,
       message: '【敵軍援護増援】敵軍が弓兵部隊を出撃！',
     };
   }
